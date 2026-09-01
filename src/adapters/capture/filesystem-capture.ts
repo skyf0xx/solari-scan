@@ -14,18 +14,48 @@
  * directory. A live end-to-end run disproved this: the walk reached
  * `dev/cpu/1`, a real Linux device pseudo-file — meaning `"."` resolves
  * close to the guest's actual filesystem root, not a scoped home
- * directory. Walking `/dev`, `/proc`, `/sys`-style trees is both wrong
- * (huge, unrelated pseudo-trees) and risky (unpredictable hangs/errors).
+ * directory.
  *
- * The fix: discover the guest's real working directory at runtime by
- * running `pwd` in the guest (see `discoverRoot()` below), and cache the
- * result for the adapter's lifetime — a Scan calls `snapshotFilesystem()`
- * exactly twice (baseline, post-run) and the guest's cwd doesn't change in
- * between. `sandbox.git.clone`/`sandbox.commands.run` (see
- * `sandbox-adapter.ts`) are called without an explicit `cwd` override, so
- * they run under the same SDK-default guest working directory that `pwd`
- * (also run without an explicit `cwd`) reports — `REPO_DIR`'s
+ * Root discovery itself is still correct: `pwd` is run in the guest at
+ * runtime (see `discoverRoot()` below) and cached for the adapter's
+ * lifetime — a Scan calls `snapshotFilesystem()` exactly twice (baseline,
+ * post-run) and the guest's cwd doesn't change in between.
+ * `sandbox.git.clone`/`sandbox.commands.run` (see `sandbox-adapter.ts`) run
+ * without an explicit `cwd` override, so they share the same SDK-default
+ * guest working directory `pwd` reports — `REPO_DIR`'s
  * relative-to-that-root assumption in `domain/scan.ts` holds.
+ *
+ * What changed is *what gets walked once the root is known*. The first fix
+ * here was a blocklist of Linux pseudo-filesystems (`dev`/`proc`/`sys`),
+ * widened once more (`usr`/`bin`/`sbin`/`lib`/`lib64`/`boot`/`media`/`mnt`/
+ * `srv`) after a live run showed walking `/usr` alone — the entire OS
+ * userland — is an effectively-unbounded walk (many minutes to hours, not a
+ * hang: every `stat`+`read` pair costs a flat ~330ms RPC round trip
+ * regardless of file size). That still wasn't enough: a further live run
+ * showed `/etc` alone contributes 91% of all files walked (564 of 620) —
+ * X11 configs, `update-alternatives` symlinks, locale data, none of it
+ * something an unprivileged install/build plausibly writes to. Blocklisting
+ * one more top-level name every time a base image ships another large
+ * irrelevant tree is whack-a-mole with no natural end.
+ *
+ * The actual fix: invert to an ALLOWLIST, applied only when the discovered
+ * root is unscoped (`"/"` exactly) — the case that showed both failure
+ * modes above. A `pwd` that already reports a small, scoped directory (the
+ * pre-bug assumption, still valid whenever it actually holds) is left alone
+ * and walked in full, no allowlist applied. When the root is `"/"`, only
+ * `home` (small on every base image seen live: one entry, the guest user's
+ * own directory), `root` (small: a handful of dotfiles), `tmp`, and
+ * `REPO_DIR_NAME` ("repo", matching `domain/scan.ts`'s `REPO_DIR` constant
+ * verbatim — the two must stay in sync, since nothing enforces it
+ * structurally) are recursed into; everything else at the root — `etc`,
+ * `var`, `usr`, `bin`, and whatever other bulk a future base image adds —
+ * is skipped without needing to be named. This matches the scan's actual
+ * question ("did install/build write outside the repo directory") against
+ * where an unprivileged process realistically *can* write: its own home
+ * directory, `/tmp`, and the repo it's building. The restriction applies
+ * only to the root's immediate children — once inside an allowed child,
+ * the walk recurses fully, since everything below that point is plausible
+ * install/build write surface.
  */
 
 import { createHash } from "node:crypto";
@@ -73,48 +103,23 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * Linux pseudo-filesystem roots — confirmed live that a sandbox's real
- * default cwd (per `pwd`) can be `/`, meaning the walk otherwise descends
- * into these. They are not real files (device nodes, kernel-exposed
- * counters, huge or infinite-feeling trees) and have nothing to do with a
- * repo's install/build behavior — excluded by name rather than relying on
- * per-entry unreadable-sentinel handling to survive walking them, which
- * would be correct but needlessly slow and fragile against trees this large
- * and this far outside what a filesystem-diff scan is meant to observe.
- *
- * Also excludes the base image's read-only OS-userland trees
- * (`usr`/`bin`/`sbin`/`lib`/`lib64`/`boot`/`media`/`mnt`/`srv`) for the same
- * reason, one level less exotic: confirmed live against a real sandbox that
- * a `pwd` root of `/` makes the walk recurse into `/usr` alone, which holds
- * the entire OS userland — tens of thousands of files, each hashed via a
- * separate stat+read round trip, an effectively-unbounded walk (many
- * minutes to hours) rather than a hang. An unprivileged install/build can't
- * write to these paths anyway, and they're irrelevant to "did this repo's
- * install/build write outside its own directory" — the scan's whole
- * question. `etc`/`var`/`run`/`tmp`/`home`/`root` stay included: real
- * install/build tooling (package-manager caches, `.npmrc`, temp files)
- * plausibly writes there, so a change there is exactly the kind of finding
- * this scan exists to surface.
- */
-const EXCLUDED_SYSTEM_PATHS = new Set([
-  "dev",
-  "proc",
-  "sys",
-  "usr",
-  "bin",
-  "sbin",
-  "lib",
-  "lib64",
-  "boot",
-  "media",
-  "mnt",
-  "srv",
-]);
+/** Must match `domain/scan.ts`'s `REPO_DIR` constant verbatim — the repo's
+ *  clone destination, and the one allowlisted root-child that names the
+ *  actual subject of the scan rather than a plausible-write-target guess.
+ *  Nothing enforces this match structurally; see this file's header. */
+const REPO_DIR_NAME = "repo";
 
-function isExcludedPseudoFilesystem(path: string): boolean {
-  const normalized = path.startsWith("/") ? path.slice(1) : path;
-  return EXCLUDED_SYSTEM_PATHS.has(normalized);
+/**
+ * The only walk-root children recursed into — see this file's header for
+ * why this is an allowlist rather than a growing pseudo-filesystem
+ * blocklist. `home` and `root` are a guest's own directories (small on
+ * every base image seen live); `tmp` and `REPO_DIR_NAME` are the other
+ * plausible install/build write targets.
+ */
+const ALLOWED_ROOT_CHILDREN = new Set(["home", "root", "tmp", REPO_DIR_NAME]);
+
+function isAllowedRootChild(name: string): boolean {
+  return ALLOWED_ROOT_CHILDREN.has(name);
 }
 
 function joinPath(dir: string, name: string): string {
@@ -140,7 +145,12 @@ export class FilesystemCaptureAdapter {
   async snapshotFilesystem(): Promise<FilesystemSnapshot> {
     const root = await this.resolveRoot();
     const entries: SnapshotEntry[] = [];
-    await this.walk(root, entries);
+    // The allowlist only applies when the discovered root is the actual
+    // filesystem root ("/") — the case a live run showed walks the entire
+    // OS image (see this file's header). A `pwd` that already reports a
+    // small, scoped directory (e.g. "/home/solari") is itself the correct,
+    // narrow walk root and needs no further restriction.
+    await this.walk(root, root === "/", entries);
     return { entries };
   }
 
@@ -172,7 +182,14 @@ export class FilesystemCaptureAdapter {
     return FALLBACK_SANDBOX_ROOT;
   }
 
-  private async walk(dir: string, out: SnapshotEntry[]): Promise<void> {
+  /**
+   * `restrictChildren` is true only while listing the immediate children of
+   * an unscoped ("/") walk root — see `snapshotFilesystem()`. It's cleared
+   * (false) for every recursive call below that point, so once inside an
+   * allowed child (`home`, `root`, `tmp`, the repo dir) everything under it
+   * is walked without further restriction.
+   */
+  private async walk(dir: string, restrictChildren: boolean, out: SnapshotEntry[]): Promise<void> {
     let listing;
     try {
       listing = await this.files.list(dir);
@@ -185,10 +202,10 @@ export class FilesystemCaptureAdapter {
     for (const entry of listing) {
       const path = joinPath(dir, entry.name);
       if (entry.dir) {
-        if (isExcludedPseudoFilesystem(path)) {
+        if (restrictChildren && !isAllowedRootChild(entry.name)) {
           continue;
         }
-        await this.walk(path, out);
+        await this.walk(path, false, out);
         continue;
       }
       out.push({ path, hash: await this.hashFile(path) });

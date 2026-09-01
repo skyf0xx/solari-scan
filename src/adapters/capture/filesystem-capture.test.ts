@@ -373,27 +373,17 @@ describe("FilesystemCaptureAdapter root discovery", () => {
 });
 
 describe("FilesystemCaptureAdapter walking a root of '/'", () => {
-  it("excludes Linux pseudo-filesystems (dev/proc/sys) from the walk", async () => {
+  it("only walks the allowlisted root children (home/root/tmp/repo), skipping everything else", async () => {
+    // Confirmed live: a `pwd` root of "/" otherwise makes the walk recurse
+    // into pseudo-filesystems (dev/proc/sys), the entire OS userland
+    // (usr/bin/sbin/lib/lib64/boot/media/mnt/srv), and base-image config
+    // bulk (etc alone was 91% of all files walked in one live run) — none
+    // of it something an unprivileged install/build plausibly writes to.
     const files = new FakeSandboxFiles();
     files.pwdResult = { exitCode: 0, stdout: "/\n" };
     files.setFile("/dev/null", "device");
     files.setFile("/proc/cpuinfo", "cpu");
     files.setFile("/sys/kernel/x", "kernel");
-    files.setFile("/home/solari/repo/a.txt", "content");
-
-    const adapter = new FilesystemCaptureAdapter(files);
-    const snapshot = await adapter.snapshotFilesystem();
-
-    expect(snapshot.entries.map((e) => e.path)).toEqual(["/home/solari/repo/a.txt"]);
-  });
-
-  it("excludes read-only OS-userland trees (usr/bin/sbin/lib/lib64/boot/media/mnt/srv) from the walk", async () => {
-    // Confirmed live: a `pwd` root of "/" makes the walk otherwise recurse
-    // into /usr alone, which holds the entire OS userland — an
-    // effectively-unbounded walk. These trees are irrelevant to "did this
-    // repo's install/build write outside its own directory".
-    const files = new FakeSandboxFiles();
-    files.pwdResult = { exitCode: 0, stdout: "/\n" };
     files.setFile("/usr/lib/x.so", "lib");
     files.setFile("/bin/sh", "shell");
     files.setFile("/sbin/init", "init");
@@ -403,36 +393,46 @@ describe("FilesystemCaptureAdapter walking a root of '/'", () => {
     files.setFile("/media/x", "media");
     files.setFile("/mnt/x", "mount");
     files.setFile("/srv/x", "srv");
-    files.setFile("/home/solari/repo/a.txt", "content");
-
-    const adapter = new FilesystemCaptureAdapter(files);
-    const snapshot = await adapter.snapshotFilesystem();
-
-    expect(snapshot.entries.map((e) => e.path)).toEqual(["/home/solari/repo/a.txt"]);
-  });
-
-  it("still walks plausible install/build write targets (etc/var/run/tmp/home/root)", async () => {
-    const files = new FakeSandboxFiles();
-    files.pwdResult = { exitCode: 0, stdout: "/\n" };
     files.setFile("/etc/npmrc", "etc");
     files.setFile("/var/cache/x", "var");
-    files.setFile("/run/x.sock.txt", "run");
-    files.setFile("/tmp/x.tmp", "tmp");
+    files.setFile("/opt/toolchain/x", "opt");
     files.setFile("/home/solari/.npm/cache.json", "home");
     files.setFile("/root/.cache/x", "root");
+    files.setFile("/tmp/x.tmp", "tmp");
+    files.setFile("/repo/a.txt", "repo");
 
     const adapter = new FilesystemCaptureAdapter(files);
     const snapshot = await adapter.snapshotFilesystem();
 
     expect(snapshot.entries.map((e) => e.path).sort()).toEqual(
-      [
-        "/etc/npmrc",
-        "/var/cache/x",
-        "/run/x.sock.txt",
-        "/tmp/x.tmp",
-        "/home/solari/.npm/cache.json",
-        "/root/.cache/x",
-      ].sort(),
+      ["/home/solari/.npm/cache.json", "/root/.cache/x", "/tmp/x.tmp", "/repo/a.txt"].sort(),
     );
+  });
+
+  it("does not restrict children of an already-scoped root (pwd not '/')", async () => {
+    // A `pwd` that already reports a small, scoped directory is the correct
+    // walk root as-is — the allowlist only kicks in for an unscoped "/".
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/home/solari\n" };
+    files.setFile("/home/solari/cache/x.bin", "content");
+    files.setFile("/home/solari/repo/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path).sort()).toEqual(
+      ["/home/solari/cache/x.bin", "/home/solari/repo/a.txt"].sort(),
+    );
+  });
+
+  it("walks fully once inside an allowed root child — the allowlist is one level deep only", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/\n" };
+    files.setFile("/home/solari/.cache/deep/nested/file.bin", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["/home/solari/.cache/deep/nested/file.bin"]);
   });
 });
