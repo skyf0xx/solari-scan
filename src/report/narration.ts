@@ -25,9 +25,12 @@ export function renderProvisioningDoneLine(): string {
   return "Sandbox provisioned.";
 }
 
-/** Step 2: target repo/PR cloned into the sandbox. Still no code executed. */
-export function renderCloneDoneLine(repoUrl: string, prNumber: number): string {
-  return `Cloned ${repoUrl} (PR #${prNumber}) into sandbox.`;
+/** Step 2: target repo (and, if present, PR) cloned into the sandbox. Still
+ *  no code executed. A plain repo-link scan has no PR to name — the line
+ *  omits the PR mention entirely rather than printing a fabricated or
+ *  undefined PR number. */
+export function renderCloneDoneLine(repoUrl: string, prNumber: number | undefined): string {
+  return prNumber === undefined ? `Cloned ${repoUrl} into sandbox.` : `Cloned ${repoUrl} (PR #${prNumber}) into sandbox.`;
 }
 
 /** Step 3: baseline filesystem snapshot hashed. */

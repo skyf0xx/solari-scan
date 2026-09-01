@@ -30,7 +30,9 @@ export interface ReportJsonShape {
   scan: {
     input: {
       repoUrl: string;
-      prNumber: number;
+      /** Absent for a plain repo-link scan — no PR to report, never a
+       *  fabricated or `undefined` number. */
+      prNumber?: number;
     };
     startedAt: string;
     finishedAt: string;
@@ -60,10 +62,10 @@ export function buildReportJsonShape(report: Report): ReportJsonShape {
 
   return {
     scan: {
-      input: {
-        repoUrl: scan.input.repoUrl,
-        prNumber: scan.input.prNumber,
-      },
+      input:
+        scan.input.prNumber === undefined
+          ? { repoUrl: scan.input.repoUrl }
+          : { repoUrl: scan.input.repoUrl, prNumber: scan.input.prNumber },
       startedAt: scan.startedAt.toISOString(),
       finishedAt: scan.finishedAt.toISOString(),
       execution: {

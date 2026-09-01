@@ -76,6 +76,14 @@ describe("narration lines", () => {
     expect(line).toContain("42");
   });
 
+  it("confirms a plain repo-link clone without fabricating or naming a PR", () => {
+    const line = renderCloneDoneLine("https://github.com/example/repo", undefined);
+
+    expect(line).toContain("https://github.com/example/repo");
+    expect(line).not.toContain("PR");
+    expect(line).not.toContain("undefined");
+  });
+
   it("announces which command is about to run for install and build", () => {
     expect(renderCommandStartLine("install", "npm install")).toContain("npm install");
     expect(renderCommandStartLine("build", "npm run build")).toContain("npm run build");

@@ -40,6 +40,17 @@ describe("renderReportJson", () => {
     expect(parsed.shape.kind).toBe("itemized");
   });
 
+  it("omits prNumber entirely for a plain repo-link scan, never as undefined or fabricated", () => {
+    const report = buildReport(makeScan({ input: { repoUrl: "https://github.com/example/repo" } }), []);
+
+    const shape = buildReportJsonShape(report);
+    const json = renderReportJson(report);
+
+    expect(shape.scan.input).toEqual({ repoUrl: "https://github.com/example/repo" });
+    expect(shape.scan.input).not.toHaveProperty("prNumber");
+    expect(json).not.toContain("prNumber");
+  });
+
   it("renders dates as ISO strings, not Date objects", () => {
     const report = buildReport(makeScan(), []);
 
