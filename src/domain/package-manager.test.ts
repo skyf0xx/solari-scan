@@ -16,13 +16,6 @@ describe("detectPackageManager", () => {
     });
   });
 
-  it("detects pip from requirements.txt", () => {
-    expect(detectPackageManager(["requirements.txt"])).toEqual({
-      installCommand: "pip install -r requirements.txt",
-      buildCommand: "python3 -m build",
-    });
-  });
-
   it("returns undefined when no known marker file is present", () => {
     expect(detectPackageManager(["README.md", "LICENSE"])).toBeUndefined();
   });

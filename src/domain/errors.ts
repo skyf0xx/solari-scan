@@ -52,8 +52,8 @@ export class CloneError extends ScanError {
 }
 
 /**
- * No known package manager marker file (package.json, requirements.txt,
- * etc.) was found at the repo root, so no install/build command can be
+ * No known package manager marker file (package.json, package-lock.json)
+ * was found at the repo root, so no install/build command can be
  * chosen. Distinct from an install/build command failing after it runs —
  * this is domain refusing to guess a command RELEVANT RULES doesn't name.
  */
