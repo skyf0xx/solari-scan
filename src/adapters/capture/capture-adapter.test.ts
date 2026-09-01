@@ -7,6 +7,7 @@ import type {
   SandboxFsEntry,
   SandboxFsStat,
   SandboxGuestAccess,
+  SandboxRunResult,
 } from "./sandbox-files.js";
 
 class FakeCommandHandle implements SandboxCommandHandle {
@@ -46,6 +47,9 @@ class FakeSandboxGuest implements SandboxGuestAccess {
   }
   async start(_cmd: string, _options?: SandboxCommandOptions): Promise<SandboxCommandHandle> {
     return new FakeCommandHandle();
+  }
+  async run(_cmd: string, _options?: SandboxCommandOptions): Promise<SandboxRunResult> {
+    return { exitCode: 0, stdout: "/home/user\n" };
   }
 }
 

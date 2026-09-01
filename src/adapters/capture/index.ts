@@ -1,5 +1,5 @@
 export { CaptureAdapter } from "./capture-adapter.js";
-export { FilesystemCaptureAdapter, SANDBOX_ROOT, MAX_HASHABLE_BYTES } from "./filesystem-capture.js";
+export { FilesystemCaptureAdapter, FALLBACK_SANDBOX_ROOT, MAX_HASHABLE_BYTES } from "./filesystem-capture.js";
 export { ProxyCaptureAdapter } from "./proxy-capture.js";
 export { CaptureAdapterError } from "./errors.js";
 export type {
@@ -10,4 +10,5 @@ export type {
   SandboxCommandHandle,
   SandboxCommandOptions,
   SandboxCommandChunk,
+  SandboxRunResult,
 } from "./sandbox-files.js";

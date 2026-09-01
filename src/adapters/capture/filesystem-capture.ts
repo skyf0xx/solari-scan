@@ -1,29 +1,42 @@
 /**
  * Recursive filesystem snapshot/diff, hashed via the injected
- * `SandboxFileAccess` dependency. `CapturePort.snapshotFilesystem()` takes
+ * `SandboxGuestAccess` dependency. `CapturePort.snapshotFilesystem()` takes
  * no parameters, but the tree it hashes lives inside the Solari sandbox —
  * reachable only through this constructor-injected dependency (see
  * `hedgehog decision list SOLARI-SCAN-CAPTURE-ADAPTER`).
  *
  * Walk root: `domain/scan.ts`'s `REPO_DIR` constant ("repo") is the clone
- * destination *relative to the sandbox root* — so hashing has to start
- * above it to see writes the install/build made outside the repo
- * directory (e.g. a postinstall script writing to `~/.cache` or `/tmp`).
- * `SANDBOX_ROOT` below is the walk root: the sandbox's home/working
- * directory one level above `REPO_DIR`, matching `SandboxPort.clone`'s
- * `{ path: "repo" }` being relative to that same root. This is a concrete
- * choice this layer had to make (`core-design.md`'s "Left unresolved"
- * section defers exactly this to capture-adapter's own build step).
+ * destination *relative to the sandbox's default working directory* — so
+ * hashing has to start above it to see writes the install/build made
+ * outside the repo directory (e.g. a postinstall script writing to
+ * `~/.cache` or `/tmp`). The walk root used to be hardcoded as `"."`, on
+ * the assumption that `"."` resolves to that same scoped working
+ * directory. A live end-to-end run disproved this: the walk reached
+ * `dev/cpu/1`, a real Linux device pseudo-file — meaning `"."` resolves
+ * close to the guest's actual filesystem root, not a scoped home
+ * directory. Walking `/dev`, `/proc`, `/sys`-style trees is both wrong
+ * (huge, unrelated pseudo-trees) and risky (unpredictable hangs/errors).
+ *
+ * The fix: discover the guest's real working directory at runtime by
+ * running `pwd` in the guest (see `discoverRoot()` below), and cache the
+ * result for the adapter's lifetime — a Scan calls `snapshotFilesystem()`
+ * exactly twice (baseline, post-run) and the guest's cwd doesn't change in
+ * between. `sandbox.git.clone`/`sandbox.commands.run` (see
+ * `sandbox-adapter.ts`) are called without an explicit `cwd` override, so
+ * they run under the same SDK-default guest working directory that `pwd`
+ * (also run without an explicit `cwd`) reports — `REPO_DIR`'s
+ * relative-to-that-root assumption in `domain/scan.ts` holds.
  */
 
 import { createHash } from "node:crypto";
 import type { FilesystemChange, FilesystemSnapshot, SnapshotEntry } from "../../domain/ports.js";
 import { CaptureAdapterError } from "./errors.js";
-import type { SandboxFileAccess } from "./sandbox-files.js";
+import type { SandboxGuestAccess } from "./sandbox-files.js";
 
-/** Walk root for `snapshotFilesystem()` — one level above `REPO_DIR`
- *  ("repo") in `domain/scan.ts`, i.e. the sandbox's own root/home dir. */
-export const SANDBOX_ROOT = ".";
+/** Degraded-mode fallback walk root, used only if the guest's real working
+ *  directory can't be discovered (see `discoverRoot()`). Matches the old,
+ *  disproven-live hardcoded behavior — a worse but non-crashing default. */
+export const FALLBACK_SANDBOX_ROOT = ".";
 
 /**
  * Files larger than this are not read for hashing — reading a multi-GB
@@ -68,14 +81,48 @@ function joinPath(dir: string, name: string): string {
 }
 
 /** Binds `CapturePort`'s filesystem half to the sandbox's real file tree
- *  via the injected `SandboxFileAccess`. */
+ *  via the injected `SandboxGuestAccess` (needs the fuller surface, not just
+ *  `SandboxFileAccess`, to run the one-shot `pwd` root-discovery lookup). */
 export class FilesystemCaptureAdapter {
-  constructor(private readonly files: SandboxFileAccess) {}
+  /** Cached result of `discoverRoot()` — populated on first
+   *  `snapshotFilesystem()` call and reused for the adapter's lifetime. */
+  private cachedRoot: string | undefined;
+
+  constructor(private readonly files: SandboxGuestAccess) {}
 
   async snapshotFilesystem(): Promise<FilesystemSnapshot> {
+    const root = await this.resolveRoot();
     const entries: SnapshotEntry[] = [];
-    await this.walk(SANDBOX_ROOT, entries);
+    await this.walk(root, entries);
     return { entries };
+  }
+
+  private async resolveRoot(): Promise<string> {
+    if (this.cachedRoot === undefined) {
+      this.cachedRoot = await this.discoverRoot();
+    }
+    return this.cachedRoot;
+  }
+
+  /**
+   * Runs `pwd` in the guest to discover its real default working
+   * directory. Falls back to `FALLBACK_SANDBOX_ROOT` (degraded mode,
+   * matching the old disproven-live behavior) if the command fails to run,
+   * exits non-zero, or returns empty output — rare, but better to keep
+   * scanning in a documented degraded mode than to crash the whole Scan
+   * over a `pwd` lookup.
+   */
+  private async discoverRoot(): Promise<string> {
+    try {
+      const result = await this.files.run("pwd");
+      const path = result.stdout.trim();
+      if (result.exitCode === 0 && path.length > 0) {
+        return path;
+      }
+    } catch {
+      // Fall through to the degraded-mode fallback below.
+    }
+    return FALLBACK_SANDBOX_ROOT;
   }
 
   private async walk(dir: string, out: SnapshotEntry[]): Promise<void> {

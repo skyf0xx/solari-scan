@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { FilesystemCaptureAdapter, MAX_HASHABLE_BYTES } from "./filesystem-capture.js";
-import type { SandboxFileAccess, SandboxFsEntry, SandboxFsStat } from "./sandbox-files.js";
+import { FALLBACK_SANDBOX_ROOT, FilesystemCaptureAdapter, MAX_HASHABLE_BYTES } from "./filesystem-capture.js";
+import type {
+  SandboxCommandHandle,
+  SandboxCommandOptions,
+  SandboxFsEntry,
+  SandboxFsStat,
+  SandboxGuestAccess,
+  SandboxRunResult,
+} from "./sandbox-files.js";
 import { CaptureAdapterError } from "./errors.js";
 
 interface FakeFile {
@@ -9,10 +16,16 @@ interface FakeFile {
   sizeOverride?: number;
 }
 
-/** A tiny in-memory filesystem implementing `SandboxFileAccess`, keyed by
- *  full path (e.g. "repo/package.json", "cache/x.bin"). */
-class FakeSandboxFiles implements SandboxFileAccess {
+/** A tiny in-memory filesystem implementing `SandboxGuestAccess`, keyed by
+ *  full path (e.g. "repo/package.json", "cache/x.bin"). By default `run("pwd")`
+ *  reports `"."` as the discovered root, so existing path fixtures (written
+ *  relative to `.`) keep resolving the same way; tests exercising root
+ *  discovery itself override `pwdResult`/`pwdError`. */
+class FakeSandboxFiles implements SandboxGuestAccess {
   private readonly files = new Map<string, FakeFile>();
+  pwdResult: SandboxRunResult = { exitCode: 0, stdout: ".\n" };
+  pwdError: Error | undefined;
+  runCalls = 0;
 
   setFile(path: string, content: string | Uint8Array, modTimeMs = 1000, sizeOverride?: number): void {
     const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
@@ -21,6 +34,22 @@ class FakeSandboxFiles implements SandboxFileAccess {
 
   deleteFile(path: string): void {
     this.files.delete(path);
+  }
+
+  async write(_path: string, _data: Uint8Array | string): Promise<void> {
+    throw new Error("not used in this test");
+  }
+
+  async start(_cmd: string, _options?: SandboxCommandOptions): Promise<SandboxCommandHandle> {
+    throw new Error("not used in this test");
+  }
+
+  async run(_cmd: string, _options?: SandboxCommandOptions): Promise<SandboxRunResult> {
+    this.runCalls += 1;
+    if (this.pwdError) {
+      throw this.pwdError;
+    }
+    return this.pwdResult;
   }
 
   async list(path: string): Promise<SandboxFsEntry[]> {
@@ -131,7 +160,7 @@ describe("FilesystemCaptureAdapter.snapshotFilesystem", () => {
   });
 
   it("wraps a list() failure in CaptureAdapterError", async () => {
-    const files: SandboxFileAccess = {
+    const files: SandboxGuestAccess = {
       list: async () => {
         throw new Error("permission denied");
       },
@@ -141,6 +170,13 @@ describe("FilesystemCaptureAdapter.snapshotFilesystem", () => {
       read: async () => {
         throw new Error("unreachable");
       },
+      write: async () => {
+        throw new Error("unreachable");
+      },
+      start: async () => {
+        throw new Error("unreachable");
+      },
+      run: async () => ({ exitCode: 0, stdout: ".\n" }),
     };
 
     const adapter = new FilesystemCaptureAdapter(files);
@@ -270,5 +306,68 @@ describe("FilesystemCaptureAdapter.diffFilesystem", () => {
     const snapshot = { entries: [{ path: "cache/x.bin", hash: "h1" }] };
     const changes = await adapter.diffFilesystem(snapshot, snapshot, "repo");
     expect(changes).toEqual([]);
+  });
+});
+
+describe("FilesystemCaptureAdapter root discovery", () => {
+  it("discovers the walk root via a one-shot `pwd` and walks from it", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/home/solari\n" };
+    files.setFile("/home/solari/cache/x.bin", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(files.runCalls).toBe(1);
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["/home/solari/cache/x.bin"]);
+  });
+
+  it("caches the discovered root: a second snapshotFilesystem() call does not re-run the discovery command", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/home/solari\n" };
+    files.setFile("/home/solari/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    await adapter.snapshotFilesystem();
+    await adapter.snapshotFilesystem();
+
+    expect(files.runCalls).toBe(1);
+  });
+
+  it("falls back to the degraded '.' root if the discovery command exits non-zero", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 1, stdout: "" };
+    files.setFile("repo/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["repo/a.txt"]);
+  });
+
+  it("falls back to the degraded '.' root if the discovery command returns empty output", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "   \n" };
+    files.setFile("repo/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["repo/a.txt"]);
+  });
+
+  it("falls back to the degraded '.' root if the discovery command throws, still completing the scan", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdError = new Error("command not found: pwd");
+    files.setFile("repo/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["repo/a.txt"]);
+  });
+
+  it("exposes the fallback root as FALLBACK_SANDBOX_ROOT for callers to reason about degraded mode", () => {
+    expect(FALLBACK_SANDBOX_ROOT).toBe(".");
   });
 });

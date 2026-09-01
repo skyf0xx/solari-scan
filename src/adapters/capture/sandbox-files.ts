@@ -11,14 +11,19 @@
  *
  * - `SandboxFileAccess` — the narrow read-side slice `FilesystemCaptureAdapter`
  *   uses to walk and hash the sandbox's file tree (`list`/`stat`/`read`).
- * - `SandboxGuestAccess` — a superset `ProxyCaptureAdapter` needs: writing
- *   the forwarding-proxy script into the guest (`SessionHandle.files.write`)
- *   and starting/awaiting/killing it as a background process
- *   (`SessionHandle.commands.start`). The proxy runs *inside* the sandbox
- *   (see `proxy-capture.ts`'s header), which is why this needs more than
- *   file access — starting a background command is a `commands`-shaped
- *   operation, not a `files`-shaped one, so `SandboxFileAccess` alone no
- *   longer covers what this layer depends on.
+ * - `SandboxGuestAccess` — a superset both `ProxyCaptureAdapter` and
+ *   `FilesystemCaptureAdapter` need: writing the forwarding-proxy script
+ *   into the guest (`SessionHandle.files.write`), starting/awaiting/killing
+ *   it as a background process (`SessionHandle.commands.start`), and
+ *   running a single one-shot command to completion
+ *   (`SessionHandle.commands.run`) — used by `FilesystemCaptureAdapter` to
+ *   discover the guest's real working directory (`pwd`) instead of assuming
+ *   a hardcoded walk root (confirmed live: `"."` resolves close to the
+ *   guest filesystem root, not a scoped home directory — see
+ *   `filesystem-capture.ts`'s header). `run` is the simpler fit for a
+ *   single quick command that runs to completion: `start` returns
+ *   immediately and requires wiring `onData`/`wait` to reconstruct a result
+ *   a one-shot call already gets directly from `commands.run`.
  */
 
 /** One entry in a directory listing, matching `FsEntry`'s shape. */
@@ -77,12 +82,22 @@ export interface SandboxCommandOptions {
   background?: boolean;
 }
 
+/** Terminal result of a one-shot command run to completion, matching the
+ *  slice of `CommandResult` (`@solarisdk/core`'s `dist/types.d.ts`) this
+ *  layer needs. */
+export interface SandboxRunResult {
+  exitCode: number;
+  stdout: string;
+}
+
 /**
- * The sandbox-guest surface `ProxyCaptureAdapter` depends on: everything
- * `SandboxFileAccess` offers, plus writing a file into the guest and
- * starting/observing a background command — together, enough to upload the
- * proxy script, launch it as a background process inside the guest, wait
- * for its readiness signal, and later kill it and read back its log.
+ * The sandbox-guest surface `ProxyCaptureAdapter` and `FilesystemCaptureAdapter`
+ * depend on: everything `SandboxFileAccess` offers, plus writing a file into
+ * the guest, starting/observing a background command, and running a single
+ * one-shot command to completion — together, enough to upload the proxy
+ * script, launch it as a background process inside the guest, wait for its
+ * readiness signal, kill it and read back its log, and (for
+ * `FilesystemCaptureAdapter`) discover the guest's real working directory.
  */
 export interface SandboxGuestAccess extends SandboxFileAccess {
   /** Write `data` to `path` inside the guest (matches
@@ -92,4 +107,9 @@ export interface SandboxGuestAccess extends SandboxFileAccess {
   /** Start `cmd` as a background command inside the guest and return a
    *  handle immediately (matches `SessionHandle.commands.start`). */
   start(cmd: string, options?: SandboxCommandOptions): Promise<SandboxCommandHandle>;
+
+  /** Run `cmd` inside the guest to completion and return its exit code and
+   *  stdout (matches `SessionHandle.commands.run`). Used for quick one-shot
+   *  lookups, e.g. `pwd` to discover the guest's real working directory. */
+  run(cmd: string, options?: SandboxCommandOptions): Promise<SandboxRunResult>;
 }

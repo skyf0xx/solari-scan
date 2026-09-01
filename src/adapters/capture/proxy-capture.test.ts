@@ -9,7 +9,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaptureAdapterError } from "./errors.js";
 import { ProxyCaptureAdapter } from "./proxy-capture.js";
-import type { SandboxCommandChunk, SandboxCommandHandle, SandboxCommandOptions, SandboxGuestAccess } from "./sandbox-files.js";
+import type {
+  SandboxCommandChunk,
+  SandboxCommandHandle,
+  SandboxCommandOptions,
+  SandboxGuestAccess,
+  SandboxRunResult,
+} from "./sandbox-files.js";
 
 /**
  * A fake `SandboxGuestAccess` standing in for the injected sandbox
@@ -84,6 +90,9 @@ class FakeSandboxGuest implements SandboxGuestAccess {
     this.lastHandle = handle;
     this.handleReadyResolve?.();
     return handle;
+  }
+  async run(_cmd: string, _options?: SandboxCommandOptions): Promise<SandboxRunResult> {
+    throw new Error("not used in this test");
   }
 }
 
