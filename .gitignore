@@ -4,3 +4,4 @@
 .hedgehog/commit.lock
 .env
 node_modules/
+dist/

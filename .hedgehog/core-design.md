@@ -151,8 +151,26 @@ brainstorming or PR-FAQ skills.
   content hash vs. mtime+size heuristic) is a `capture-adapter`
   implementation detail, not an architecture decision — left to that
   layer's own build step.
-- Whether the Solari SDK's sandbox API exposes a way to run a process
-  with a custom env (for `HTTP_PROXY`/`HTTPS_PROXY` injection) needs
-  confirming against the real SDK during `sandbox-adapter`'s build — the
-  brief's mechanism assumes this is possible but it hasn't been verified
-  against the actual API surface yet.
+
+## Confirmed against the real Solari SDK (`@solarisdk/sandbox` 0.1.2)
+
+Verified at bootstrap time by inspecting the published package (official,
+maintained by `pinetreeresearch`):
+
+- `SandboxClient.create()` provisions a sandbox; `sandbox.git.clone(url,
+  opts)` clones a repo into it — the clone-before-execute ordering the
+  brief requires is directly supported, not something to fake with a
+  generic shell command.
+- `sandbox.commands.run(cmd, { env, onStdout, onStderr })` accepts a
+  per-command `env` map and streams stdout/stderr live via callbacks —
+  this is the exact shape `sandbox-adapter` needs for live narration and
+  is *more* precise than the brief's original assumption of a
+  session-wide `HTTP_PROXY`/`HTTPS_PROXY` export: `env` can be scoped to
+  just the install/build commands rather than mutating the whole
+  session via `sandbox.env()`.
+- `sandbox.files.list/stat/read/readText` give the filesystem read
+  surface `capture-adapter` needs for the before/after tree snapshot,
+  without shelling out to `find`/`sha256sum` inside the guest.
+- `sandbox.kill()` is idempotent per its own doc comment — safe to call
+  from a cleanup path that isn't sure whether an earlier kill attempt
+  already landed.

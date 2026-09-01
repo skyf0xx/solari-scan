@@ -1,0 +1,37 @@
+{
+  "name": "solari-scan",
+  "version": "1.0.0",
+  "description": "Reports observed runtime behavior (network + filesystem) of a GitHub PR's install/build, executed inside an isolated Solari sandbox.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "solari-scan": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "solari",
+    "cli",
+    "security",
+    "sandbox"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@solarisdk/sandbox": "^0.1.2",
+    "commander": "^15.0.0",
+    "dotenv": "^17.4.2"
+  }
+}
