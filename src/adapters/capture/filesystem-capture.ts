@@ -73,11 +73,31 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Linux pseudo-filesystem roots — confirmed live that a sandbox's real
+ * default cwd (per `pwd`) can be `/`, meaning the walk otherwise descends
+ * into these. They are not real files (device nodes, kernel-exposed
+ * counters, huge or infinite-feeling trees) and have nothing to do with a
+ * repo's install/build behavior — excluded by name rather than relying on
+ * per-entry unreadable-sentinel handling to survive walking them, which
+ * would be correct but needlessly slow and fragile against trees this large
+ * and this far outside what a filesystem-diff scan is meant to observe.
+ */
+const EXCLUDED_PSEUDO_FILESYSTEMS = new Set(["dev", "proc", "sys"]);
+
+function isExcludedPseudoFilesystem(path: string): boolean {
+  const normalized = path.startsWith("/") ? path.slice(1) : path;
+  return EXCLUDED_PSEUDO_FILESYSTEMS.has(normalized);
+}
+
 function joinPath(dir: string, name: string): string {
   if (dir === "." || dir === "") {
     return name;
   }
-  return `${dir}/${name}`;
+  // `pwd`-discovered roots can be "/" (this sandbox's real cwd, confirmed
+  // live) — a plain `${dir}/${name}` then produces "//name". Avoid a
+  // doubled separator when `dir` already ends in one.
+  return dir.endsWith("/") ? `${dir}${name}` : `${dir}/${name}`;
 }
 
 /** Binds `CapturePort`'s filesystem half to the sandbox's real file tree
@@ -138,6 +158,9 @@ export class FilesystemCaptureAdapter {
     for (const entry of listing) {
       const path = joinPath(dir, entry.name);
       if (entry.dir) {
+        if (isExcludedPseudoFilesystem(path)) {
+          continue;
+        }
         await this.walk(path, out);
         continue;
       }
