@@ -198,9 +198,9 @@ describe("SandboxAdapter", () => {
     await adapter.provision();
     runMock.mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
 
-    await adapter.runCommand("pip install -r requirements.txt");
+    await adapter.runCommand("npm run build");
 
-    expect(runMock).toHaveBeenCalledWith("pip", expect.objectContaining({ args: ["install", "-r", "requirements.txt"] }));
+    expect(runMock).toHaveBeenCalledWith("npm", expect.objectContaining({ args: ["run", "build"] }));
   });
 
   it("does not pass an args field for a single-word command", async () => {

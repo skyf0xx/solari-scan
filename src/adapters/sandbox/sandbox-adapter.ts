@@ -42,8 +42,8 @@ function prLocalBranch(prNumber: number): string {
 }
 
 /**
- * Splits a shell-style command line ("npm install", "pip install -r
- * requirements.txt") into an executable name plus its arguments. Confirmed
+ * Splits a shell-style command line ("npm install", "npm run build") into
+ * an executable name plus its arguments. Confirmed
  * live: `sandbox.commands.run(cmd, opts)` execs `cmd` as a literal filename
  * — it does not shell-interpret it — so passing `"npm install"` straight
  * through as `cmd` fails with "executable file not found in $PATH" (it
