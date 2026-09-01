@@ -112,6 +112,15 @@ room for more, each trading scan time for a different kind of visibility:
   sees traffic that respects `HTTP_PROXY`/`HTTPS_PROXY`; a deeper level
   could also watch DNS queries and direct socket connections that bypass
   the proxy entirely.
+- **Request-method-aware classification** — today a destination is
+  classified by host alone; a plain-HTTP GET to an allowlisted registry
+  and a POST shipping data to the same host look identical. Only
+  reachable for plain HTTP traffic, though: HTTPS is CONNECT-tunneled, so
+  the proxy sees opaque encrypted bytes once the tunnel opens and can't
+  read the method or path without terminating TLS itself (an on-the-fly
+  MITM certificate per host) — a much larger change than the check
+  itself. Also needs a real rule, not just "GET is safe, everything else
+  isn't": legitimate installs do issue POST/PUT against some registries.
 - **Resource/behavior anomaly check** — flag an install that spawns an
   unusual number of processes or runs far longer than expected, a coarse
   signal for something like a cryptominer dropped by a malicious
