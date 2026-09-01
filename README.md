@@ -1,19 +1,22 @@
 # solari-scan
 
-Clones a GitHub PR into an isolated Solari sandbox, runs install and
-build, and reports whether it found anything suspicious — unexpected
+Clones a GitHub repo or PR into an isolated Solari sandbox, runs install
+and build, and reports whether it found anything suspicious — unexpected
 network destinations, unexpected filesystem writes outside the repo.
 
 ```
-solari-scan <repo-url> --pr <n>
+solari-scan <url>
 ```
 
-No other flags, no config.
+`<url>` is either a plain repo link (`https://github.com/owner/repo`,
+scanning the default branch) or a PR link
+(`https://github.com/owner/repo/pull/<n>`, scanning that PR). No other
+flags, no config.
 
 ## What it does
 
 1. Provisions a fresh Solari sandbox.
-2. Clones the repo, checks out the PR.
+2. Clones the repo, checks out the PR if the URL named one.
 3. Hashes the file tree as a baseline.
 4. Starts a forwarding proxy, exports `HTTP_PROXY`/`HTTPS_PROXY` to log
    proxy-respecting traffic.
