@@ -61,6 +61,10 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
   await ports.sandbox.provision();
 
   try {
+    // input.prNumber is undefined for a plain repo link; CloneOptions.prNumber
+    // is optional for exactly this case, so passing it through unconditionally
+    // (rather than branching) leaves sandbox-adapter's clone as a normal
+    // `git clone` with no PR checkout step.
     await ports.sandbox.clone(input.repoUrl, { path: REPO_DIR, prNumber: input.prNumber });
 
     const rootEntries = await ports.sandbox.listDirectory(REPO_DIR);

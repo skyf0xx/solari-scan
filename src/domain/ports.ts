@@ -36,8 +36,10 @@ export interface RunCommandResult {
 export interface CloneOptions {
   /** Destination directory the repo is cloned into, relative to the sandbox root. */
   path: string;
-  /** PR number to clone/check out. */
-  prNumber: number;
+  /** PR number to clone/check out. Absent for a plain repo link — the clone
+   *  is a normal `git clone` left on whatever the default branch is, with
+   *  no checkout step. */
+  prNumber?: number;
 }
 
 /** The name of an entry in a directory listing, matching `FsEntry`'s shape. */

@@ -5,10 +5,15 @@
  * against.
  */
 
-/** Input naming the repo/PR a Scan targets. */
+/**
+ * Input naming the repo (and, optionally, PR) a Scan targets. `prNumber` is
+ * absent for a plain repo link — the scan clones and runs against whatever
+ * the default branch is, with no PR checkout step. Classifying a URL into
+ * one shape or the other is CLI-layer parsing, not this type's concern.
+ */
 export interface ScanInput {
   repoUrl: string;
-  prNumber: number;
+  prNumber?: number;
 }
 
 /** Which capture mechanism produced a Finding. */

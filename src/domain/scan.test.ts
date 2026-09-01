@@ -196,4 +196,46 @@ describe("runScan", () => {
 
     await expect(runScan(INPUT, { sandbox, capture })).resolves.toBeDefined();
   });
+
+  it("clones with the PR number when input.prNumber is present (existing PR behavior unchanged)", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort();
+
+    const report = await runScan(INPUT, { sandbox, capture });
+
+    expect(sandbox.cloneCalls).toEqual([
+      { repoUrl: INPUT.repoUrl, options: { path: "repo", prNumber: 42 } },
+    ]);
+    expect(report.scan.input.prNumber).toBe(42);
+  });
+
+  it("clones without a PR number when input.prNumber is absent (plain repo link, default branch)", async () => {
+    const input: ScanInput = { repoUrl: "https://github.com/example/repo" };
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort();
+
+    const report = await runScan(input, { sandbox, capture });
+
+    expect(sandbox.cloneCalls).toEqual([
+      { repoUrl: input.repoUrl, options: { path: "repo", prNumber: undefined } },
+    ]);
+    expect(report.scan.input.prNumber).toBeUndefined();
+  });
+
+  it("completes a full scan and reports normally for a plain repo link (no PR)", async () => {
+    const input: ScanInput = { repoUrl: "https://github.com/example/repo" };
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort({
+      observedConnections: [{ host: "registry.npmjs.org" }],
+      filesystemChanges: [],
+    });
+
+    const report = await runScan(input, { sandbox, capture });
+
+    expect(report.findings).toEqual([]);
+    expect(report.shape).toEqual({ kind: "clean" });
+    expect(report.scan.execution.failed).toBe(false);
+    expect(report.scan.input.prNumber).toBeUndefined();
+    expect(sandbox.destroyCallCount).toBe(1);
+  });
 });

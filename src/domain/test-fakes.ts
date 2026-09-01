@@ -30,6 +30,7 @@ export interface FakeSandboxConfig {
 export class FakeSandboxPort implements SandboxPort {
   readonly calls: string[] = [];
   readonly commandsRun: Array<{ cmd: string; options?: RunCommandOptions }> = [];
+  readonly cloneCalls: Array<{ repoUrl: string; options: CloneOptions }> = [];
   destroyCallCount = 0;
 
   constructor(private readonly config: FakeSandboxConfig = {}) {}
@@ -41,8 +42,9 @@ export class FakeSandboxPort implements SandboxPort {
     }
   }
 
-  async clone(_repoUrl: string, _options: CloneOptions): Promise<void> {
+  async clone(repoUrl: string, options: CloneOptions): Promise<void> {
     this.calls.push("clone");
+    this.cloneCalls.push({ repoUrl, options });
     if (this.config.cloneError) {
       throw this.config.cloneError;
     }
