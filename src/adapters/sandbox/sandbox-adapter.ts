@@ -127,6 +127,19 @@ export class SandboxAdapter implements SandboxPort {
     await this.sandbox.kill();
   }
 
+  /**
+   * The raw provisioned `Sandbox` handle, once `provision()` has succeeded.
+   * `SandboxPort`'s own methods deliberately don't expose this — `domain`
+   * only ever sees the port's narrow surface — but `command` needs it to
+   * wire the same guest session into `capture-adapter`'s `SandboxGuestAccess`
+   * (see `hedgehog decision list SOLARI-SCAN-CAPTURE-ADAPTER`: capture and
+   * sandbox adapters share one guest session rather than each provisioning
+   * their own). Not part of `SandboxPort` — a `command`-only escape hatch.
+   */
+  requireSandboxHandle(): Sandbox {
+    return this.requireSandbox();
+  }
+
   private requireSandbox(): Sandbox {
     if (!this.sandbox) {
       throw new SandboxProvisioningError(
