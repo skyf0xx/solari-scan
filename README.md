@@ -11,24 +11,25 @@ Copy `.env.example` to `.env` and add your Solari API key first. (set global or 
 
 ### Global install
 
-```
-1. npm install -g .
-2. solari-scan <pr link or repo link> [--with-fs]
+```bash
+$ npm install -g .
+$ solari-scan <pr link or repo link> [--with-fs]
 ```
 
 
 ### Local install
 
-```
-1. npm run build
-2. node dist/index.js <pr link or repo link> [--with-fs]
+```bash
+$ npm run build
+$ node dist/index.js <pr link or repo link> [--with-fs]
 ```
 
-Try it:
+#### Try it on local:
 
-```
-node dist/index.js https://github.com/skyf0xx/polymarket   # clean
-node dist/index.js https://github.com/skyf0xx/bad-repo      # flagged
+```bash
+$ npm run build
+$ node dist/index.js https://github.com/skyf0xx/polymarket   # clean
+$ node dist/index.js https://github.com/skyf0xx/bad-repo      # flagged
 ```
 
 ## Is this PR Safe?
