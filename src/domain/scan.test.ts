@@ -142,4 +142,47 @@ describe("runScan", () => {
     expect(report.scan.telemetry.proxyPort).toBe(54321);
     expect(report.scan.telemetry.connectionsObserved).toBe(2);
   });
+
+  it("forwards install/build stdout/stderr live to the caller's output callbacks", async () => {
+    // Correction Protocol: runScan previously called
+    // ports.sandbox.runCommand without forwarding onStdout/onStderr at
+    // all, so install/build output was never streamed anywhere — command
+    // could only narrate a burst of already-known facts after runScan
+    // resolved, never the live process output itself.
+    const sandbox = new FakeSandboxPort({
+      commandOutput: {
+        "npm install": [{ stream: "stdout", data: "installing...\n" }],
+        "npm run build": [
+          { stream: "stdout", data: "building...\n" },
+          { stream: "stderr", data: "a warning\n" },
+        ],
+      },
+    });
+    const capture = new FakeCapturePort();
+
+    const installChunks: Array<{ stream: string; data: string }> = [];
+    const buildChunks: Array<{ stream: string; data: string }> = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onInstallOutput: (stream, data) => installChunks.push({ stream, data }),
+        onBuildOutput: (stream, data) => buildChunks.push({ stream, data }),
+      },
+    );
+
+    expect(installChunks).toEqual([{ stream: "stdout", data: "installing...\n" }]);
+    expect(buildChunks).toEqual([
+      { stream: "stdout", data: "building...\n" },
+      { stream: "stderr", data: "a warning\n" },
+    ]);
+  });
+
+  it("runs with no output callbacks at all without throwing (ScanOutput is optional)", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort();
+
+    await expect(runScan(INPUT, { sandbox, capture })).resolves.toBeDefined();
+  });
 });

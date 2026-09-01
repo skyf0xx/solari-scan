@@ -21,6 +21,10 @@ export interface FakeSandboxConfig {
   commandResults?: Record<string, RunCommandResult>;
   provisionError?: Error;
   cloneError?: Error;
+  /** When set, `runCommand` invokes the matching command's `onStdout`/
+   *  `onStderr` with these chunks before resolving — lets a test observe
+   *  that a caller's output callbacks actually receive data. */
+  commandOutput?: Record<string, Array<{ stream: "stdout" | "stderr"; data: string }>>;
 }
 
 export class FakeSandboxPort implements SandboxPort {
@@ -52,6 +56,13 @@ export class FakeSandboxPort implements SandboxPort {
   async runCommand(cmd: string, options?: RunCommandOptions): Promise<RunCommandResult> {
     this.calls.push(`runCommand:${cmd}`);
     this.commandsRun.push({ cmd, options });
+    for (const chunk of this.config.commandOutput?.[cmd] ?? []) {
+      if (chunk.stream === "stdout") {
+        options?.onStdout?.(chunk.data);
+      } else {
+        options?.onStderr?.(chunk.data);
+      }
+    }
     return this.config.commandResults?.[cmd] ?? { exitCode: 0 };
   }
 
