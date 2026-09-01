@@ -147,6 +147,39 @@ describe("SandboxAdapter", () => {
     });
   });
 
+  it("clones a plain repo link (no prNumber) without any PR fetch/checkout step", async () => {
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+    await adapter.clone("https://github.com/acme/widgets", { path: "repo" });
+
+    expect(cloneMock).toHaveBeenCalledWith("https://github.com/acme/widgets", { path: "repo" });
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it("clones a plain repo link (prNumber explicitly undefined) without any PR fetch/checkout step", async () => {
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+    await adapter.clone("https://github.com/acme/widgets", { path: "repo", prNumber: undefined });
+
+    expect(cloneMock).toHaveBeenCalledWith("https://github.com/acme/widgets", { path: "repo" });
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
+  it("maps a plain-clone (no prNumber) failure to CloneError without a PR number in the message", async () => {
+    cloneMock.mockRejectedValueOnce(new Error("repository not found"));
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+
+    await expect(
+      adapter.clone("https://github.com/acme/missing", { path: "repo" }),
+    ).rejects.toMatchObject({
+      constructor: CloneError,
+      message: expect.stringContaining("repository not found"),
+    });
+
+    expect(runMock).not.toHaveBeenCalled();
+  });
+
   it("lists directory entries by delegating to sandbox.files.list", async () => {
     const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
     await adapter.provision();

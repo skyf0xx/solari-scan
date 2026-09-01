@@ -91,7 +91,6 @@ export class SandboxAdapter implements SandboxPort {
 
   async clone(repoUrl: string, options: CloneOptions): Promise<void> {
     const sandbox = this.requireSandbox();
-    const localBranch = prLocalBranch(options.prNumber);
 
     try {
       await sandbox.git.clone(repoUrl, { path: options.path });
@@ -99,16 +98,25 @@ export class SandboxAdapter implements SandboxPort {
       throw this.cloneError(repoUrl, options.prNumber, err);
     }
 
+    if (options.prNumber === undefined) {
+      // Plain repo link: no PR to fetch/check out — the clone above already
+      // left the repo on whatever its default branch is, exactly like a
+      // normal `git clone`.
+      return;
+    }
+    const prNumber = options.prNumber;
+    const localBranch = prLocalBranch(prNumber);
+
     try {
       const fetchResult = await sandbox.commands.run("git", {
-        args: ["fetch", "origin", `pull/${options.prNumber}/head:${localBranch}`],
+        args: ["fetch", "origin", `pull/${prNumber}/head:${localBranch}`],
         cwd: options.path,
       });
       if (fetchResult.exitCode !== 0) {
         throw new Error(fetchResult.stderr || `git fetch exited with code ${fetchResult.exitCode}`);
       }
     } catch (err) {
-      throw this.cloneError(repoUrl, options.prNumber, err);
+      throw this.cloneError(repoUrl, prNumber, err);
     }
 
     try {
@@ -120,13 +128,14 @@ export class SandboxAdapter implements SandboxPort {
         throw new Error(checkoutResult.stderr || `git checkout exited with code ${checkoutResult.exitCode}`);
       }
     } catch (err) {
-      throw this.cloneError(repoUrl, options.prNumber, err);
+      throw this.cloneError(repoUrl, prNumber, err);
     }
   }
 
-  private cloneError(repoUrl: string, prNumber: number, err: unknown): CloneError {
+  private cloneError(repoUrl: string, prNumber: number | undefined, err: unknown): CloneError {
     const message = err instanceof Error ? err.message : String(err);
-    return new CloneError(`Failed to clone ${repoUrl} (PR #${prNumber}): ${message}`, { cause: err });
+    const prSuffix = prNumber !== undefined ? ` (PR #${prNumber})` : "";
+    return new CloneError(`Failed to clone ${repoUrl}${prSuffix}: ${message}`, { cause: err });
   }
 
   async listDirectory(dir: string): Promise<DirectoryEntryName[]> {
