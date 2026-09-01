@@ -241,8 +241,17 @@ export class FilesystemCaptureAdapter {
     postRun: FilesystemSnapshot,
     repoDir: string,
   ): Promise<FilesystemChange[]> {
-    const prefix = `${repoDir}/`;
-    const isInsideRepo = (path: string) => path === repoDir || path.startsWith(prefix);
+    // Snapshot entries are paths joined against the pwd-discovered sandbox
+    // root (see `joinPath`/`discoverRoot` above) — e.g. "/repo/..." when the
+    // root is "/", not the bare "repo/..." `repoDir` alone would produce.
+    // Comparing against `repoDir` directly here would silently never match,
+    // making every file genuinely inside the repo look like an outside-repo
+    // write. Resolve the same root `walk()` used (cached, no extra `pwd`
+    // call) to build the prefix entries actually have.
+    const root = await this.resolveRoot();
+    const resolvedRepoDir = joinPath(root, repoDir);
+    const prefix = `${resolvedRepoDir}/`;
+    const isInsideRepo = (path: string) => path === resolvedRepoDir || path.startsWith(prefix);
     // The proxy script/log are this scanner's own artifacts, written (by
     // ProxyCaptureAdapter.startProxy(), after the baseline snapshot) between
     // the two snapshots this diff compares — confirmed live that without

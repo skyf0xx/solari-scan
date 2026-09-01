@@ -299,6 +299,29 @@ describe("FilesystemCaptureAdapter.diffFilesystem", () => {
     expect(changes).toEqual([{ path: "repo-backup/x.txt", changeType: "created" }]);
   });
 
+  it("ignores changes inside repoDir even when the walk root is '/', not '.'", async () => {
+    // Confirmed live (axios/axios PR #11174, a 628-package install): when
+    // `pwd` resolves to "/", walk() builds entries as "/repo/..." (see
+    // joinPath), not "repo/...". Comparing those against the bare `repoDir`
+    // string ("repo") never matches, so every file genuinely inside the
+    // repo — the entire node_modules tree included — was wrongly reported
+    // as an outside-repo write.
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/\n" };
+    const adapter = new FilesystemCaptureAdapter(files);
+
+    const baseline = { entries: [{ path: "/repo/package.json", hash: "h1" }] };
+    const postRun = {
+      entries: [
+        { path: "/repo/package.json", hash: "h1" },
+        { path: "/repo/node_modules/.bin/acorn", hash: "h2" },
+      ],
+    };
+
+    const changes = await adapter.diffFilesystem(baseline, postRun, "repo");
+    expect(changes).toEqual([]);
+  });
+
   it("returns no changes for two identical snapshots", async () => {
     const files = new FakeSandboxFiles();
     const adapter = new FilesystemCaptureAdapter(files);
