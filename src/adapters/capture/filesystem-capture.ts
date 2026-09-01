@@ -61,6 +61,7 @@
 import { createHash } from "node:crypto";
 import type { FilesystemChange, FilesystemSnapshot, SnapshotEntry } from "../../domain/ports.js";
 import { CaptureAdapterError } from "./errors.js";
+import { PROXY_LOG_PATH, PROXY_SCRIPT_PATH } from "./proxy-capture.js";
 import type { SandboxGuestAccess } from "./sandbox-files.js";
 
 /** Degraded-mode fallback walk root, used only if the guest's real working
@@ -239,6 +240,12 @@ export class FilesystemCaptureAdapter {
   ): Promise<FilesystemChange[]> {
     const prefix = `${repoDir}/`;
     const isInsideRepo = (path: string) => path === repoDir || path.startsWith(prefix);
+    // The proxy script/log are this scanner's own artifacts, written (by
+    // ProxyCaptureAdapter.startProxy(), after the baseline snapshot) between
+    // the two snapshots this diff compares — confirmed live that without
+    // this exclusion, PROXY_SCRIPT_PATH always appears as a false-positive
+    // "created" finding on every scan.
+    const isOwnArtifact = (path: string) => path === PROXY_SCRIPT_PATH || path === PROXY_LOG_PATH;
 
     const baselineByPath = new Map(baseline.entries.map((entry) => [entry.path, entry.hash]));
     const postRunByPath = new Map(postRun.entries.map((entry) => [entry.path, entry.hash]));
@@ -246,7 +253,7 @@ export class FilesystemCaptureAdapter {
     const changes: FilesystemChange[] = [];
 
     for (const [path, hash] of postRunByPath) {
-      if (isInsideRepo(path)) {
+      if (isInsideRepo(path) || isOwnArtifact(path)) {
         continue;
       }
       const baselineHash = baselineByPath.get(path);
@@ -258,7 +265,7 @@ export class FilesystemCaptureAdapter {
     }
 
     for (const path of baselineByPath.keys()) {
-      if (isInsideRepo(path)) {
+      if (isInsideRepo(path) || isOwnArtifact(path)) {
         continue;
       }
       if (!postRunByPath.has(path)) {

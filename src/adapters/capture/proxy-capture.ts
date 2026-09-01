@@ -44,12 +44,17 @@ import type { SandboxCommandHandle, SandboxGuestAccess } from "./sandbox-files.j
  *  under the repo checkout (`domain/scan.ts`'s `REPO_DIR`, "repo") — this
  *  file has nothing to do with the repo being scanned and must not be
  *  swept up by its own filesystem-change detection or collide with
- *  anything the repo's build writes. */
-const PROXY_SCRIPT_PATH = "/tmp/solari-scan-proxy.py";
+ *  anything the repo's build writes. Exported so `filesystem-capture.ts`'s
+ *  `diffFilesystem` can exclude it — confirmed live that without this
+ *  exclusion, this path itself always appears as a false-positive
+ *  "created" finding on every scan, since it's written (by `startProxy()`,
+ *  below) after the baseline snapshot is taken but before the post-run one. */
+export const PROXY_SCRIPT_PATH = "/tmp/solari-scan-proxy.py";
 
 /** Where the proxy logs every distinct destination host it sees, one per
- *  line. Same rationale as `PROXY_SCRIPT_PATH` for living under `/tmp`. */
-const PROXY_LOG_PATH = "/tmp/solari-scan-proxy.log";
+ *  line. Same rationale as `PROXY_SCRIPT_PATH` for living under `/tmp`, and
+ *  exported for the same reason. */
+export const PROXY_LOG_PATH = "/tmp/solari-scan-proxy.log";
 
 /** Stdout line the script prints exactly once, right after it binds its
  *  listening socket and before it starts serving — the signal `startProxy()`

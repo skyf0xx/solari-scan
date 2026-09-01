@@ -307,6 +307,39 @@ describe("FilesystemCaptureAdapter.diffFilesystem", () => {
     const changes = await adapter.diffFilesystem(snapshot, snapshot, "repo");
     expect(changes).toEqual([]);
   });
+
+  it("excludes the scanner's own proxy script/log from findings, even though they're outside repoDir", async () => {
+    // Confirmed live: ProxyCaptureAdapter.startProxy() writes
+    // /tmp/solari-scan-proxy.py after the baseline snapshot is taken —
+    // without this exclusion it always appears as a false-positive
+    // "created" finding on every single scan, since it's this scanner's
+    // own artifact, not something the target repo's install/build did.
+    const files = new FakeSandboxFiles();
+    const adapter = new FilesystemCaptureAdapter(files);
+
+    const baseline = { entries: [] };
+    const postRun = {
+      entries: [
+        { path: "/tmp/solari-scan-proxy.py", hash: "h1" },
+        { path: "/tmp/solari-scan-proxy.log", hash: "h2" },
+        { path: "/tmp/actually-written-by-install.txt", hash: "h3" },
+      ],
+    };
+
+    const changes = await adapter.diffFilesystem(baseline, postRun, "repo");
+    expect(changes).toEqual([{ path: "/tmp/actually-written-by-install.txt", changeType: "created" }]);
+  });
+
+  it("excludes the scanner's own proxy script/log even when they're deleted between snapshots", async () => {
+    const files = new FakeSandboxFiles();
+    const adapter = new FilesystemCaptureAdapter(files);
+
+    const baseline = { entries: [{ path: "/tmp/solari-scan-proxy.py", hash: "h1" }] };
+    const postRun = { entries: [] };
+
+    const changes = await adapter.diffFilesystem(baseline, postRun, "repo");
+    expect(changes).toEqual([]);
+  });
 });
 
 describe("FilesystemCaptureAdapter root discovery", () => {
