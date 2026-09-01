@@ -1,27 +1,30 @@
 /**
- * Commander argument/flag parsing for `solari-scan <repo-url> --pr <n>`.
- * Exactly one positional arg and one required numeric option — no other
- * flags, per the brief's "no flags beyond --pr required" rule. Parsing is
- * kept separate from `run-command.ts`'s orchestration so argument validation
- * is testable without provisioning anything.
+ * Commander argument/flag parsing for `solari-scan <url>`. Exactly one
+ * positional arg and no flags — the URL's own shape (per `parse-url.ts`)
+ * carries whether it's a PR link or a plain repo link, per
+ * `core-design.md`'s "System shape". Parsing is kept separate from
+ * `run-command.ts`'s orchestration so argument validation is testable
+ * without provisioning anything.
  */
 
 import { Command, InvalidArgumentError } from "commander";
+import { InvalidUrlError, parseUrl } from "./parse-url.js";
 
 export interface ParsedArgs {
   repoUrl: string;
-  prNumber: number;
+  prNumber?: number;
 }
 
-function parsePrNumber(value: string): number {
-  if (!/^\d+$/.test(value)) {
-    throw new InvalidArgumentError("--pr must be a positive integer.");
+function parseUrlArgument(value: string): { repoUrl: string; prNumber?: number } {
+  try {
+    const { repoUrl, prNumber } = parseUrl(value);
+    return prNumber === undefined ? { repoUrl } : { repoUrl, prNumber };
+  } catch (err) {
+    if (err instanceof InvalidUrlError) {
+      throw new InvalidArgumentError(err.message);
+    }
+    throw err;
   }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new InvalidArgumentError("--pr must be a positive integer.");
-  }
-  return parsed;
 }
 
 export interface CreateProgramOptions {
@@ -43,12 +46,15 @@ export function createProgram(options: CreateProgramOptions): Command {
   program
     .name("solari-scan")
     .description(
-      "Reports observed runtime behavior (network + filesystem) of a GitHub PR's install/build, executed inside an isolated Solari sandbox.",
+      "Reports observed runtime behavior (network + filesystem) of a GitHub repo or PR's install/build, executed inside an isolated Solari sandbox.",
     )
-    .argument("<repo-url>", "GitHub repository URL to scan")
-    .requiredOption("--pr <n>", "pull request number to scan", parsePrNumber)
-    .action(async (repoUrl: string, opts: { pr: number }) => {
-      await options.onRun({ repoUrl, prNumber: opts.pr });
+    .argument(
+      "<url>",
+      "GitHub repo URL (scans the default branch) or PR URL (.../pull/<n>, scans that PR)",
+      parseUrlArgument,
+    )
+    .action(async (args: ParsedArgs) => {
+      await options.onRun(args);
     });
 
   return program;

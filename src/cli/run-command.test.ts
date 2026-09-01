@@ -154,6 +154,29 @@ describe("runCommand", () => {
     );
   });
 
+  it("passes a plain repo URL (no PR) through to runScan with prNumber undefined", async () => {
+    runScanMock.mockResolvedValue(
+      makeReport({
+        scan: {
+          ...makeReport().scan,
+          input: { repoUrl: "https://github.com/acme/widgets" },
+        },
+      }),
+    );
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets" },
+      stdout: vi.fn(),
+      stderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(runScanMock).toHaveBeenCalledTimes(1);
+    const [input] = runScanMock.mock.calls[0] ?? [];
+    expect(input).toEqual({ repoUrl: "https://github.com/acme/widgets", prNumber: undefined });
+  });
+
   it("wires SandboxAdapter with the config's apiKey/baseUrl", async () => {
     runScanMock.mockResolvedValue(makeReport());
 

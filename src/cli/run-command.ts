@@ -125,8 +125,8 @@ const ERROR_MAPPINGS: Record<ScanError["kind"], ErrorMapping> = {
   "clone-failure": {
     exitCode: 5,
     render: (err) =>
-      `Cloning the target repo/PR failed.\n` +
-      `Check that the repository URL and PR number are correct and reachable.\n(${err.message})`,
+      `Cloning the target repo failed.\n` +
+      `Check that the URL is correct and reachable (and, if it names a PR, that the PR exists).\n(${err.message})`,
   },
   "package-manager-undetected": {
     exitCode: 6,
