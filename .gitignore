@@ -2,6 +2,8 @@
 .hedgehog/hedgehog.db
 .hedgehog/hedgehog.db-*
 .hedgehog/commit.lock
+.hedgehog/notes/
 .env
 node_modules/
 dist/
+.claude/scheduled_tasks.lock
