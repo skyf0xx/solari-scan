@@ -2,3 +2,5 @@
 .hedgehog/hedgehog.db
 .hedgehog/hedgehog.db-*
 .hedgehog/commit.lock
+.env
+node_modules/

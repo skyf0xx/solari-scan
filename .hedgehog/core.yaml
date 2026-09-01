@@ -1,0 +1,28 @@
+id: solari-scan-cli
+pattern: hexagonal
+layers:
+  - id: domain
+    scope: ["src/domain/**"]
+    verify: "pnpm vitest run src/domain/"
+    commit: "feat(solari-scan): domain"
+  - id: sandbox-adapter
+    depends_on: domain
+    scope: ["src/adapters/sandbox/**"]
+    verify: "pnpm vitest run src/adapters/sandbox/"
+    commit: "feat(solari-scan): sandbox adapter"
+  - id: capture-adapter
+    depends_on: sandbox-adapter
+    scope: ["src/adapters/capture/**"]
+    verify: "pnpm vitest run src/adapters/capture/"
+    commit: "feat(solari-scan): capture adapter"
+  - id: report
+    depends_on: capture-adapter
+    scope: ["src/report/**"]
+    verify: "pnpm vitest run src/report/"
+    commit: "feat(solari-scan): report rendering"
+  - id: command
+    depends_on: report
+    scope: ["src/cli/**", "src/index.ts", "package.json", "tsconfig.json", "tsup.config.ts"]
+    verify: "pnpm vitest run src/cli/ && pnpm typecheck && pnpm build"
+    verify_radius: ["src/**", "package.json", "tsconfig.json", "tsup.config.ts"]
+    commit: "feat(solari-scan): cli entrypoint"

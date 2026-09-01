@@ -1,0 +1,119 @@
+{
+  "id": "solari-scan",
+  "goal": "Build a CLI (`solari-scan <repo-url> --pr <n>`) that clones a GitHub repo/PR into an isolated Solari code sandbox, executes install+build only (never the test suite), and reports observed runtime behavior — unexpected outbound network destinations and unexpected filesystem writes outside the repo directory — as facts, never a safe/unsafe verdict.",
+  "outcome": "A stranger with only a Solari API key and this cloned repo can run one command against any public repo/PR and get a legible terminal report of what the code actually did during install and build, plus a secondary solari-scan-report.json artifact, with the sandbox always destroyed afterward and clear errors on credit/concurrency exhaustion instead of stack traces.",
+  "priority": 1,
+  "requirements": [
+    {
+      "id": "SOLARI-SCAN-RULE-1",
+      "kind": "rule",
+      "statement": "Code is never executed during clone — clone is a distinct, earlier, narrated step before any install/build command runs."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-2",
+      "kind": "rule",
+      "statement": "The sandbox is destroyed exactly once on every exit path: clean finish, install/build failure, uncaught error, or user interrupt."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-3",
+      "kind": "rule",
+      "statement": "The test suite is never invoked by any code path — install and build only."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-4",
+      "kind": "rule",
+      "statement": "Raw sockets, hardcoded transports, and direct DNS are not captured by the network proxy — this limit is stated once in the README, never hidden."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-5",
+      "kind": "rule",
+      "statement": "The words 'safe' and 'unsafe' never appear in any output — findings are reported as observed facts, with one line near the findings stating 'observed behavior, not a verdict'."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-6",
+      "kind": "rule",
+      "statement": "No artificial delays, spinners, or progress theater — step timing reflects real elapsed time and real counts (files hashed, connections observed, proxy port)."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-7",
+      "kind": "rule",
+      "statement": "CLI is the entire product surface — no web dashboard, no server process, no flags beyond --pr required for the primary path, no config file."
+    },
+    {
+      "id": "SOLARI-SCAN-RULE-8",
+      "kind": "rule",
+      "statement": "stdout/stderr from install and build stream to the terminal live as produced, never buffered and dumped at the end."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-1",
+      "kind": "acceptance",
+      "statement": "Given a valid repo URL and PR number, a sandbox is created and the target PR's code is cloned into it before any install/build command runs."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-2",
+      "kind": "acceptance",
+      "statement": "Given any exit path (clean finish, install/build failure, uncaught error, user interrupt), the sandbox is destroyed exactly once before the process exits."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-3",
+      "kind": "acceptance",
+      "statement": "Given exhausted credits or the concurrent-sandbox limit already in use, the CLI prints a clear, actionable error naming the constraint — never a raw stack trace."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-4",
+      "kind": "acceptance",
+      "statement": "Given a baseline and post-run filesystem snapshot, any file created, modified, or deleted outside the repo directory appears as a finding with its path."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-5",
+      "kind": "acceptance",
+      "statement": "Given no writes outside the repo directory, the filesystem capture contributes zero findings — no per-file 'no writes' noise."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-6",
+      "kind": "acceptance",
+      "statement": "Given any outbound connection during install+build that respects HTTP_PROXY/HTTPS_PROXY, its destination is logged and classified against the host allowlist."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-7",
+      "kind": "acceptance",
+      "statement": "Given a logged destination not on the host allowlist, it appears as a finding naming the host."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-8",
+      "kind": "acceptance",
+      "statement": "Given only allowlisted destinations were contacted, the network capture contributes zero findings."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-9",
+      "kind": "acceptance",
+      "statement": "Given a repo with a detectable package manager, the correct install command runs before the build command, and the test suite never runs."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-10",
+      "kind": "acceptance",
+      "statement": "Given install or build exits non-zero, the scan still completes its filesystem/network capture and reports what was observed rather than aborting the report."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-11",
+      "kind": "acceptance",
+      "statement": "Given zero findings, terminal output collapses to exactly one line: 'No unexpected behavior observed during install/build.'"
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-12",
+      "kind": "acceptance",
+      "statement": "Given one or more findings, each is printed individually with enough detail to act on (host or path, which capture step produced it) — itemized output only appears when there is something to itemize."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-13",
+      "kind": "acceptance",
+      "statement": "Given any scan (clean or not), solari-scan-report.json is written with structured scan/finding data."
+    },
+    {
+      "id": "SOLARI-SCAN-ACCEPTANCE-14",
+      "kind": "acceptance",
+      "statement": "Narration during a scan states real, specific values at each step: actual file counts hashed/diffed, the actual proxy port in use, the actual connection count observed — never generic placeholder text."
+    }
+  ],
+  "depends_on": []
+}
