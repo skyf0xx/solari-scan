@@ -92,23 +92,19 @@
  * because a real per-step signal would require a `domain`-layer change this
  * task's scope doesn't include.
  *
- * Post-run snapshot hashing and proxy-log parsing: **no heartbeat covers
- * these, and this is a genuine, reported gap, not an oversight.** Both
- * steps run entirely *inside* `runScan`, after the install/build steps
- * `command` does get live output for, and their own narration
- * (`renderPostRunSnapshotLine`/`renderProxyLogParseLine`) only happens in
- * `narrateFromReport`'s post-hoc burst below — by the time `command` regains
- * control, both steps have already finished. Unlike provisioning, there is
- * no proxy signal available either: nothing else fires between the last
- * `onBuildOutput`/`onBuildExit` and `runScan`'s final resolution that could
- * mark "post-run snapshot started" or "proxy log parse started". Covering
- * this stretch faithfully needs a `domain`-layer callback analogous to
- * `onInstallExit`/`onBuildExit` (e.g. `onPostRunSnapshotStart`,
- * `onProxyLogParseStart`) that does not exist today and is out of this
- * layer's ALLOWED SCOPE (`src/cli/**`, not `src/domain/**`) to add. Rather
- * than fabricate a heartbeat keyed to nothing real, this is left silent for
- * that one stretch and flagged here for a follow-up Correction Protocol /
- * domain-layer task.
+ * Post-run snapshot hashing and proxy-log parsing: covered the same way as
+ * install/build's exit callbacks, via `ScanOutput`'s
+ * `onProxyLogParseStart`/`onProxyLogParseDone` and
+ * `onPostRunSnapshotStart`/`onPostRunSnapshotDone` (added to `domain/scan.ts`
+ * via Correction Protocol after this layer's own INTENT CHECK flagged the
+ * gap). Each `*Start` starts a tracked heartbeat and each matching `*Done`
+ * stops it, following the exact same pattern as the provisioning/install/
+ * build heartbeats above. `onProxyLogParseDone`/`onPostRunSnapshotDone`
+ * don't print their own summary line beyond stopping the heartbeat — the
+ * existing post-hoc `renderProxyLogParseLine`/`renderPostRunSnapshotLine`
+ * calls in `narrateFromReport` below still print the final counts as part
+ * of the step-by-step burst once the full `Report` is known, so the count
+ * isn't narrated twice.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -340,10 +336,38 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
       stdout(renderBuildExitLine(exitCode));
     };
 
+    // Covers the two remaining silent stretches named in this file's header
+    // ("Heartbeat coverage") — both run entirely inside runScan, after
+    // install/build, with no other signal available until each one's own
+    // Start/Done callback fires.
+    let proxyLogParseHeartbeat: ReturnType<typeof startHeartbeat> | undefined;
+    let postRunSnapshotHeartbeat: ReturnType<typeof startHeartbeat> | undefined;
+    const onProxyLogParseStart = (): void => {
+      proxyLogParseHeartbeat = trackedHeartbeat("Parsing proxy log");
+    };
+    const onProxyLogParseDone = (_connectionsObserved: number): void => {
+      proxyLogParseHeartbeat?.stop();
+    };
+    const onPostRunSnapshotStart = (): void => {
+      postRunSnapshotHeartbeat = trackedHeartbeat("Hashing post-run snapshot");
+    };
+    const onPostRunSnapshotDone = (_filesHashed: number): void => {
+      postRunSnapshotHeartbeat?.stop();
+    };
+
     const report = await runScan(
       { repoUrl: deps.args.repoUrl, prNumber: deps.args.prNumber },
       { sandbox: sandboxAdapter, capture: captureAdapter },
-      { onInstallOutput, onBuildOutput, onInstallExit, onBuildExit },
+      {
+        onInstallOutput,
+        onBuildOutput,
+        onInstallExit,
+        onBuildExit,
+        onProxyLogParseStart,
+        onProxyLogParseDone,
+        onPostRunSnapshotStart,
+        onPostRunSnapshotDone,
+      },
     );
 
     if (interrupted) {

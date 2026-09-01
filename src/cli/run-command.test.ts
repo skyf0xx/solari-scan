@@ -624,6 +624,96 @@ describe("runCommand", () => {
       await runPromise;
     });
 
+    it("ticks a proxy-log-parse heartbeat between onProxyLogParseStart and onProxyLogParseDone, then stops it", async () => {
+      const writeStdout = vi.fn();
+      let resolveRunScan!: (report: Report) => void;
+      let capturedOutput:
+        | {
+            onProxyLogParseStart: () => void;
+            onProxyLogParseDone: (connectionsObserved: number) => void;
+          }
+        | undefined;
+
+      runScanMock.mockImplementation((_input: unknown, _ports: unknown, output: typeof capturedOutput) => {
+        capturedOutput = output;
+        return new Promise<Report>((resolve) => {
+          resolveRunScan = resolve;
+        });
+      });
+
+      const runPromise = runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout,
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn().mockResolvedValue(undefined),
+      });
+
+      capturedOutput?.onProxyLogParseStart();
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Parsing proxy log"))).toBe(true);
+
+      capturedOutput?.onProxyLogParseDone(2);
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Parsing proxy log"))).toBe(false);
+
+      resolveRunScan(makeReport());
+      await runPromise;
+    });
+
+    it("ticks a post-run-snapshot heartbeat between onPostRunSnapshotStart and onPostRunSnapshotDone, then stops it", async () => {
+      const writeStdout = vi.fn();
+      let resolveRunScan!: (report: Report) => void;
+      let capturedOutput:
+        | {
+            onPostRunSnapshotStart: () => void;
+            onPostRunSnapshotDone: (filesHashed: number) => void;
+          }
+        | undefined;
+
+      runScanMock.mockImplementation((_input: unknown, _ports: unknown, output: typeof capturedOutput) => {
+        capturedOutput = output;
+        return new Promise<Report>((resolve) => {
+          resolveRunScan = resolve;
+        });
+      });
+
+      const runPromise = runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout,
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn().mockResolvedValue(undefined),
+      });
+
+      capturedOutput?.onPostRunSnapshotStart();
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Hashing post-run snapshot"))).toBe(
+        true,
+      );
+
+      capturedOutput?.onPostRunSnapshotDone(12);
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Hashing post-run snapshot"))).toBe(
+        false,
+      );
+
+      resolveRunScan(makeReport());
+      await runPromise;
+    });
+
     it("leaves no dangling heartbeat timers after runCommand resolves successfully", async () => {
       runScanMock.mockResolvedValue(makeReport());
 
@@ -644,6 +734,32 @@ describe("runCommand", () => {
       runScanMock.mockImplementation(async (_input, _ports) => {
         throw new SandboxProvisioningError("boom");
       });
+
+      await runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout: vi.fn(),
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn(),
+      });
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("leaves no dangling heartbeat timers when onProxyLogParseStart/onPostRunSnapshotStart fire but runScan then rejects before their Done callbacks", async () => {
+      runScanMock.mockImplementation(
+        async (
+          _input,
+          _ports,
+          output: { onProxyLogParseStart: () => void; onPostRunSnapshotStart: () => void },
+        ) => {
+          output.onProxyLogParseStart();
+          output.onPostRunSnapshotStart();
+          throw new SandboxProvisioningError("boom");
+        },
+      );
 
       await runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
