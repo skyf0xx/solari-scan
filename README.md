@@ -90,5 +90,29 @@ list is project-wide, not configurable per scan.
 ## Future directions
 
 - **Watch mode / CI integration**: run on every PR automatically.
-- **Closing spots**: raw-socket and direct-DNS traffic
 - **Expand languages**: currently only runs Javascript/ Typescript
+
+### Future scan-depth levels
+
+`--with-fs` is the first opt-in check beyond the default network scan;
+the same pattern (off by default, named flag, silent when skipped) leaves
+room for more, each trading scan time for a different kind of visibility:
+
+- **Process/syscall watch** — flag suspicious child processes spawned
+  during install/build (e.g. `curl`, `nc`, a shell invoked with an
+  encoded payload), not just what they printed.
+- **Secrets/credential-exposure check** — scan files the filesystem check
+  already finds created or modified for patterns that look like read or
+  exfiltrated credentials (`.npmrc` tokens, `~/.aws/credentials`), rather
+  than only reporting that the file changed.
+- **Dependency-manifest diffing** — compare `package.json`/the lockfile
+  before and after install, to catch a postinstall script that rewrites
+  its own manifest or silently adds an undeclared dependency.
+- **Raw-socket / direct-DNS visibility** — the current network check only
+  sees traffic that respects `HTTP_PROXY`/`HTTPS_PROXY`; a deeper level
+  could also watch DNS queries and direct socket connections that bypass
+  the proxy entirely.
+- **Resource/behavior anomaly check** — flag an install that spawns an
+  unusual number of processes or runs far longer than expected, a coarse
+  signal for something like a cryptominer dropped by a malicious
+  postinstall.
