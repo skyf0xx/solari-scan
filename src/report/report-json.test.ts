@@ -98,6 +98,26 @@ describe("renderReportJson", () => {
     expect(json).toContain("proxy failed to bind");
   });
 
+  it("omits filesHashedBaseline/filesHashedPostRun entirely when the filesystem check didn't run, never as available:false or a fabricated value", () => {
+    const report = buildReport(
+      makeScan({
+        telemetry: {
+          proxyPort: 8080,
+          connectionsObserved: 1,
+        },
+      }),
+      [],
+    );
+
+    const shape = buildReportJsonShape(report);
+    const json = renderReportJson(report);
+
+    expect(shape.scan.telemetry).not.toHaveProperty("filesHashedBaseline");
+    expect(shape.scan.telemetry).not.toHaveProperty("filesHashedPostRun");
+    expect(json).not.toContain("filesHashedBaseline");
+    expect(json).not.toContain("filesHashedPostRun");
+  });
+
   it("renders an Unavailable buildExitCode distinctly, never as a fabricated exit code", () => {
     const report = buildReport(
       makeScan({

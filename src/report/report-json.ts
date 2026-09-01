@@ -44,8 +44,11 @@ export interface ReportJsonShape {
       failed: boolean;
     };
     telemetry: {
-      filesHashedBaseline: JsonObservedValue;
-      filesHashedPostRun: JsonObservedValue;
+      /** Absent entirely when the filesystem check didn't run (no
+       *  `--with-fs`) — never a fabricated value or an `available: false`
+       *  placeholder standing in for "this check never ran". */
+      filesHashedBaseline?: JsonObservedValue;
+      filesHashedPostRun?: JsonObservedValue;
       proxyPort: JsonObservedValue;
       connectionsObserved: JsonObservedValue;
     };
@@ -76,8 +79,12 @@ export function buildReportJsonShape(report: Report): ReportJsonShape {
         failed: scan.execution.failed,
       },
       telemetry: {
-        filesHashedBaseline: renderObservedValue(scan.telemetry.filesHashedBaseline),
-        filesHashedPostRun: renderObservedValue(scan.telemetry.filesHashedPostRun),
+        ...(scan.telemetry.filesHashedBaseline !== undefined
+          ? { filesHashedBaseline: renderObservedValue(scan.telemetry.filesHashedBaseline) }
+          : {}),
+        ...(scan.telemetry.filesHashedPostRun !== undefined
+          ? { filesHashedPostRun: renderObservedValue(scan.telemetry.filesHashedPostRun) }
+          : {}),
         proxyPort: renderObservedValue(scan.telemetry.proxyPort),
         connectionsObserved: renderObservedValue(scan.telemetry.connectionsObserved),
       },
