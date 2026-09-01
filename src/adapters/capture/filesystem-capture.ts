@@ -41,6 +41,25 @@ function oversizedSentinelHash(size: number, modTimeMs: number): string {
   return `oversized:${size}:${modTimeMs}`;
 }
 
+/**
+ * Sentinel for an entry that's listed but can't be stat'd or read as a
+ * regular file — a broken or dangling symlink, a device file, a socket, or
+ * a permissions-denied path. Confirmed live: a sandbox's own root directory
+ * can contain such entries (e.g. a `bin` symlink at the guest's home/working
+ * directory) that have nothing to do with the repo under scan. Aborting the
+ * whole scan on one unreadable entry would fail every run against any
+ * sandbox whose base image includes one — instead the entry is recorded
+ * (so create/delete is still detectable if it later becomes readable) and
+ * the reason is preserved, rather than crashing or silently omitting it.
+ */
+function unreadableSentinelHash(reason: string): string {
+  return `unreadable:${reason}`;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function joinPath(dir: string, name: string): string {
   if (dir === "." || dir === "") {
     return name;
@@ -84,9 +103,7 @@ export class FilesystemCaptureAdapter {
     try {
       stat = await this.files.stat(path);
     } catch (err) {
-      throw new CaptureAdapterError(`Failed to stat "${path}" while snapshotting the filesystem.`, {
-        cause: err,
-      });
+      return unreadableSentinelHash(errorMessage(err));
     }
 
     if (stat.size > MAX_HASHABLE_BYTES) {
@@ -97,9 +114,7 @@ export class FilesystemCaptureAdapter {
       const content = await this.files.read(path);
       return createHash("sha256").update(content).digest("hex");
     } catch (err) {
-      throw new CaptureAdapterError(`Failed to read "${path}" while snapshotting the filesystem.`, {
-        cause: err,
-      });
+      return unreadableSentinelHash(errorMessage(err));
     }
   }
 

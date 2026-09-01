@@ -147,7 +147,11 @@ describe("FilesystemCaptureAdapter.snapshotFilesystem", () => {
     await expect(adapter.snapshotFilesystem()).rejects.toBeInstanceOf(CaptureAdapterError);
   });
 
-  it("wraps a read() failure in CaptureAdapterError", async () => {
+  it("records an unreadable entry with a sentinel hash instead of aborting the scan", async () => {
+    // Confirmed live: a sandbox's own root can contain entries (e.g. a `bin`
+    // symlink) that are listed but fail to stat/read as regular files.
+    // Aborting the whole scan on one such entry would fail every run
+    // against any sandbox whose base image includes one.
     const files = new FakeSandboxFiles();
     files.setFile("repo/a.txt", "hello");
     const originalRead = files.read.bind(files);
@@ -159,7 +163,32 @@ describe("FilesystemCaptureAdapter.snapshotFilesystem", () => {
     };
 
     const adapter = new FilesystemCaptureAdapter(files);
-    await expect(adapter.snapshotFilesystem()).rejects.toBeInstanceOf(CaptureAdapterError);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    const entry = snapshot.entries.find((e) => e.path === "repo/a.txt");
+    expect(entry).toBeDefined();
+    expect(entry!.hash).toContain("unreadable:");
+    expect(entry!.hash).toContain("disk error");
+  });
+
+  it("records a stat() failure with a sentinel hash instead of aborting the scan", async () => {
+    const files = new FakeSandboxFiles();
+    files.setFile("repo/a.txt", "hello");
+    const originalStat = files.stat.bind(files);
+    files.stat = async (path: string) => {
+      if (path === "repo/a.txt") {
+        throw new Error("broken symlink");
+      }
+      return originalStat(path);
+    };
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    const entry = snapshot.entries.find((e) => e.path === "repo/a.txt");
+    expect(entry).toBeDefined();
+    expect(entry!.hash).toContain("unreadable:");
+    expect(entry!.hash).toContain("broken symlink");
   });
 });
 
