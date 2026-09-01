@@ -14,6 +14,11 @@
 export interface ScanInput {
   repoUrl: string;
   prNumber?: number;
+  /** Enables the filesystem hash/diff check (baseline + post-run snapshot,
+   *  diff, filesystem findings). Defaults to off at the CLI layer — the
+   *  check is a real cost (recursive sandbox tree hashing) most scans skip
+   *  in favor of the fast network-only check; `--with-fs` opts back in. */
+  withFilesystemCheck?: boolean;
 }
 
 /** Which capture mechanism produced a Finding. */
@@ -75,10 +80,19 @@ export function isUnavailable<T>(value: T | Unavailable): value is Unavailable {
   return typeof value === "object" && value !== null && (value as Unavailable).unavailable === true;
 }
 
-/** Narration facts gathered during the run — real counts/ports, never placeholders. */
+/**
+ * Narration facts gathered during the run — real counts/ports, never
+ * placeholders. `filesHashedBaseline`/`filesHashedPostRun` are absent
+ * entirely (not `Unavailable`, not a fabricated `0`) when the filesystem
+ * check didn't run (`ScanInput.withFilesystemCheck` falsy) — `Unavailable`
+ * means "the check ran but couldn't produce this value," which is a
+ * different fact than "this check never ran," and report/narration code
+ * must be able to tell the two apart to stay silent about a check that
+ * never happened.
+ */
 export interface ScanTelemetry {
-  filesHashedBaseline: ObservedCount | Unavailable;
-  filesHashedPostRun: ObservedCount | Unavailable;
+  filesHashedBaseline?: ObservedCount | Unavailable;
+  filesHashedPostRun?: ObservedCount | Unavailable;
   proxyPort: ObservedCount | Unavailable;
   connectionsObserved: ObservedCount | Unavailable;
 }

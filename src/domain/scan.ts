@@ -108,8 +108,10 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
       );
     }
 
-    const baselineSnapshot = await ports.capture.snapshotFilesystem();
-    const filesHashedBaseline = baselineSnapshot.entries.length;
+    const withFilesystemCheck = input.withFilesystemCheck === true;
+
+    const baselineSnapshot = withFilesystemCheck ? await ports.capture.snapshotFilesystem() : undefined;
+    const filesHashedBaseline = baselineSnapshot?.entries.length;
 
     const { port: proxyPort, env: proxyEnv } = await ports.capture.startProxy();
 
@@ -139,14 +141,17 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
     const observedConnections = await ports.capture.stopProxy();
     output.onProxyLogParseDone?.(observedConnections.length);
 
-    output.onPostRunSnapshotStart?.();
-    const postRunSnapshot = await ports.capture.snapshotFilesystem();
-    const filesHashedPostRun = postRunSnapshot.entries.length;
-    output.onPostRunSnapshotDone?.(filesHashedPostRun);
+    let filesHashedPostRun: number | undefined;
+    if (withFilesystemCheck && baselineSnapshot) {
+      output.onPostRunSnapshotStart?.();
+      const postRunSnapshot = await ports.capture.snapshotFilesystem();
+      filesHashedPostRun = postRunSnapshot.entries.length;
+      output.onPostRunSnapshotDone?.(filesHashedPostRun);
 
-    const filesystemChanges = await ports.capture.diffFilesystem(baselineSnapshot, postRunSnapshot, REPO_DIR);
-    for (const change of filesystemChanges) {
-      findings.push({ kind: "filesystem", detail: change.path, producedBy: "post-run-snapshot" });
+      const filesystemChanges = await ports.capture.diffFilesystem(baselineSnapshot, postRunSnapshot, REPO_DIR);
+      for (const change of filesystemChanges) {
+        findings.push({ kind: "filesystem", detail: change.path, producedBy: "post-run-snapshot" });
+      }
     }
 
     for (const connection of observedConnections) {
@@ -157,8 +162,8 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
     }
 
     const telemetry: ScanTelemetry = {
-      filesHashedBaseline,
-      filesHashedPostRun,
+      ...(filesHashedBaseline !== undefined ? { filesHashedBaseline } : {}),
+      ...(filesHashedPostRun !== undefined ? { filesHashedPostRun } : {}),
       proxyPort,
       connectionsObserved: observedConnections.length,
     };

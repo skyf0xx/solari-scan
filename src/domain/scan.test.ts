@@ -22,14 +22,14 @@ describe("runScan", () => {
     expect(sandbox.destroyCallCount).toBe(1);
   });
 
-  it("reports both network and filesystem findings when both are present", async () => {
+  it("reports both network and filesystem findings when both are present and --with-fs is on", async () => {
     const sandbox = new FakeSandboxPort();
     const capture = new FakeCapturePort({
       observedConnections: [{ host: "registry.npmjs.org" }, { host: "telemetry.evil.example" }],
       filesystemChanges: [{ path: "/etc/passwd", changeType: "modified" }],
     });
 
-    const report = await runScan(INPUT, { sandbox, capture });
+    const report = await runScan({ ...INPUT, withFilesystemCheck: true }, { sandbox, capture });
 
     expect(report.shape.kind).toBe("itemized");
     expect(report.findings).toEqual(
@@ -146,7 +146,7 @@ describe("runScan", () => {
       observedConnections: [{ host: "github.com" }, { host: "registry.npmjs.org" }],
     });
 
-    const report = await runScan(INPUT, { sandbox, capture });
+    const report = await runScan({ ...INPUT, withFilesystemCheck: true }, { sandbox, capture });
 
     expect(report.scan.telemetry.filesHashedBaseline).toBe(2);
     expect(report.scan.telemetry.filesHashedPostRun).toBe(1);
@@ -295,7 +295,7 @@ describe("runScan", () => {
     const events: string[] = [];
 
     await runScan(
-      INPUT,
+      { ...INPUT, withFilesystemCheck: true },
       { sandbox, capture },
       {
         onPostRunSnapshotStart: () => events.push("start"),
@@ -313,7 +313,7 @@ describe("runScan", () => {
     const events: string[] = [];
 
     await runScan(
-      INPUT,
+      { ...INPUT, withFilesystemCheck: true },
       { sandbox, capture },
       {
         onProxyLogParseStart: () => events.push("proxyStart"),
@@ -334,7 +334,7 @@ describe("runScan", () => {
     const doneCalls: number[] = [];
 
     await runScan(
-      INPUT,
+      { ...INPUT, withFilesystemCheck: true },
       { sandbox, capture },
       {
         onPostRunSnapshotStart: () => startCalls.push(1),
@@ -347,6 +347,44 @@ describe("runScan", () => {
     expect(capture.calls.filter((c) => c === "snapshotFilesystem")).toHaveLength(2);
     expect(startCalls).toHaveLength(1);
     expect(doneCalls).toHaveLength(1);
+  });
+
+  it("never calls snapshotFilesystem/diffFilesystem or fires post-run-snapshot callbacks when withFilesystemCheck is off (the default)", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort({
+      observedConnections: [{ host: "registry.npmjs.org" }],
+    });
+
+    const events: string[] = [];
+
+    const report = await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onPostRunSnapshotStart: () => events.push("start"),
+        onPostRunSnapshotDone: () => events.push("done"),
+      },
+    );
+
+    expect(capture.calls).not.toContain("snapshotFilesystem");
+    expect(capture.calls).not.toContain("diffFilesystem");
+    expect(events).toEqual([]);
+    expect(report.scan.telemetry.filesHashedBaseline).toBeUndefined();
+    expect(report.scan.telemetry.filesHashedPostRun).toBeUndefined();
+    expect("filesHashedBaseline" in report.scan.telemetry).toBe(false);
+    expect("filesHashedPostRun" in report.scan.telemetry).toBe(false);
+  });
+
+  it("produces zero filesystem findings when withFilesystemCheck is off, even if the fake capture port is configured to report changes", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort({
+      observedConnections: [{ host: "registry.npmjs.org" }],
+      filesystemChanges: [{ path: "/etc/passwd", changeType: "modified" }],
+    });
+
+    const report = await runScan(INPUT, { sandbox, capture });
+
+    expect(report.findings.some((f) => f.kind === "filesystem")).toBe(false);
   });
 
   it("runs unchanged when onPostRunSnapshotStart/Done and onProxyLogParseStart/Done aren't provided", async () => {
