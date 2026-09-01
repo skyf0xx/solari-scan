@@ -1,0 +1,5 @@
+{
+  "intent": "solari-scan-optional-fs-check",
+  "reason": "hedgehog plan --recompile via db rebuild incorrectly marked all 5 tasks complete due to a rebuild.mjs bug: markCompletedTasks credits any task whose commit_message string matches a prior commit subject in history, with no check that the commit belongs to *this* task's own intent. On this authored, no-module-axis core every intent's layer commit messages are constants (e.g. feat(solari-scan): domain) shared across every intent, so the first intent's domain commit satisfies every later intent's domain task forever. Abandoning to reset cleanly; re-adding once the bug is fixed or a safe workaround is confirmed.",
+  "abandoned_at": "2026-09-01T17:51:23.565Z"
+}
