@@ -1,4 +1,5 @@
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { createServer, type Server } from "node:http";
 import { request as httpRequest } from "node:http";
 import { AddressInfo } from "node:net";
@@ -120,7 +121,11 @@ describe("ProxyCaptureAdapter (mocked SandboxGuestAccess)", () => {
     await startPromise;
 
     expect(guest.written.size).toBe(1);
-    const [[path, source]] = Array.from(guest.written.entries());
+    const entry = Array.from(guest.written.entries())[0];
+    if (!entry) {
+      throw new Error("expected exactly one written file");
+    }
+    const [path, source] = entry;
     expect(path).toBe("/tmp/solari-scan-proxy.py");
     expect(typeof source).toBe("string");
     expect(source as string).toContain("LISTENING:");
@@ -276,7 +281,7 @@ describeIfPython("Python proxy script (real python3 subprocess, not the adapter)
   let scriptDir: string;
   let scriptPath: string;
   let logPath: string;
-  let proxyProcess: ChildProcessWithoutNullStreams;
+  let proxyProcess: ChildProcessByStdio<null, Readable, Readable>;
   let proxyPort: number;
 
   function startUpstream(): Promise<{ server: Server; port: number }> {
