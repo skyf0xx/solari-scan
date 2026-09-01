@@ -6,8 +6,18 @@ page, not a DSH plugin.
 
 ## System shape
 
-A CLI (Step 1) — `solari-scan <repo-url> --pr <n>`, one primary command,
-no other surface.
+A CLI (Step 1) — `solari-scan <url>`, one primary command, one
+positional argument, no other surface. The CLI classifies `<url>`'s
+shape itself: a PR link (`.../pull/<n>`) scans that PR (clone + checkout,
+today's behavior); a plain repo link scans the default branch (clone,
+no checkout step). No `--pr` flag — the URL alone carries what to scan.
+
+*(Revised at re-entry, 2026-09-01: the original one-line convention above
+was `solari-scan <repo-url> --pr <n>`, with `--pr` required. Superseded
+by URL-shape auto-detection — see `SOLARI-SCAN-URL-CONVENTION`'s intent
+record for the full rationale. This is an interface change, not a
+widening: still one positional argument, still no flags, still no
+config.)*
 
 ## Stack
 
@@ -82,11 +92,12 @@ overrides the default.
    findings, the observed-behavior framing line) and to
    `solari-scan-report.json`. No I/O of its own — `command` performs the
    actual writes/prints using this layer's pure output.
-5. **command** — the CLI entrypoint: Commander argument/flag parsing for
-   `solari-scan <repo-url> --pr <n>`, env var loading, wiring `domain`
-   to the two adapters and to `report`, and the top-level error handler
-   that turns a typed error into the specific user-facing message the
-   brief requires (never a raw stack trace) and a non-zero exit code.
+5. **command** — the CLI entrypoint: Commander argument parsing for
+   `solari-scan <url>` (single positional, classified into a PR link vs.
+   a plain repo link — see "System shape"), env var loading, wiring
+   `domain` to the two adapters and to `report`, and the top-level error
+   handler that turns a typed error into the specific user-facing message
+   the brief requires (never a raw stack trace) and a non-zero exit code.
 
 ## Module axis
 
@@ -151,6 +162,12 @@ brainstorming or PR-FAQ skills.
   content hash vs. mtime+size heuristic) is a `capture-adapter`
   implementation detail, not an architecture decision — left to that
   layer's own build step.
+- Exact URL-classification regex/parsing (which host(s) count as GitHub,
+  how a malformed or unrecognized URL is rejected) is a `command`-layer
+  implementation detail, not an architecture decision — left to that
+  layer's own build step. The architecture-level commitment is only the
+  two-shape classification itself (PR link vs. plain repo link) named in
+  "System shape."
 
 ## Confirmed against the real Solari SDK (`@solarisdk/sandbox` 0.1.2)
 

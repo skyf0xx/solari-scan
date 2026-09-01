@@ -1,0 +1,56 @@
+{
+  "id": "solari-scan-url-convention",
+  "goal": "Replace the two-argument `solari-scan <repo-url> --pr <n>` calling convention (with --pr required) with a single positional `solari-scan <url>` argument, classifying the URL's own shape into a PR link (github.com/owner/repo/pull/<n>) or a plain repo link (github.com/owner/repo) and running the scan accordingly: a PR link clones and checks out that PR (today's existing behavior, unchanged); a plain repo link clones and scans the default branch, with no PR checkout step and no PR number threaded anywhere downstream.",
+  "outcome": "A user runs `solari-scan <url>` with one argument, no flags. Given a PR link, the scan behaves exactly as it does today (clone, checkout that PR, report). Given a plain repo link, the scan clones the repo, skips the PR-checkout step entirely, and scans whatever is on the default branch — narration, the terminal report, and solari-scan-report.json all read correctly for a scan that has no PR number, rather than printing a stale or fabricated one. --pr is removed; a malformed or unrecognized URL produces a clear, actionable error, never a raw stack trace.",
+  "priority": 1,
+  "requirements": [
+    {
+      "id": "SOLARI-SCAN-URL-RULE-1",
+      "kind": "rule",
+      "statement": "The CLI takes exactly one positional argument (the URL) and no --pr flag or any other flag — classification of PR-link vs. repo-link happens entirely from the URL's own shape, never from a separate option."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-RULE-2",
+      "kind": "rule",
+      "statement": "ScanInput.prNumber becomes optional. Every downstream consumer (sandbox clone, narration, report text, report JSON) branches correctly on its absence rather than assuming a PR is always present."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-RULE-3",
+      "kind": "rule",
+      "statement": "A plain repo link never triggers the PR fetch/checkout step (git fetch origin pull/<n>/head, git checkout) — clone completes with whatever the default branch is, exactly as a normal `git clone` leaves it."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-RULE-4",
+      "kind": "rule",
+      "statement": "A URL that is neither a recognizable PR link nor a recognizable plain repo link produces a clear, actionable error naming the problem — never a raw stack trace, and never silently treated as one shape or the other by default."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-ACCEPTANCE-1",
+      "kind": "acceptance",
+      "statement": "Given a URL of the shape github.com/owner/repo/pull/123 (with or without a trailing slash or https:// scheme), the scan clones the repo and checks out PR #123, identical to today's --pr behavior."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-ACCEPTANCE-2",
+      "kind": "acceptance",
+      "statement": "Given a URL of the shape github.com/owner/repo (no /pull/ segment), the scan clones the repo and scans the default branch, with no PR-checkout step attempted."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-ACCEPTANCE-3",
+      "kind": "acceptance",
+      "statement": "Given a repo-link scan (no PR), narration's clone line and the final report text/JSON correctly omit or clearly mark PR number as not applicable, rather than printing 'PR #undefined' or a fabricated number."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-ACCEPTANCE-4",
+      "kind": "acceptance",
+      "statement": "Given a URL that is not a valid GitHub repo or PR link, the CLI exits with a clear, actionable error message naming the problem, before any sandbox is provisioned."
+    },
+    {
+      "id": "SOLARI-SCAN-URL-ACCEPTANCE-5",
+      "kind": "acceptance",
+      "statement": "Running `solari-scan --pr 42 <url>` or any other --pr flag usage fails as an unrecognized option — the flag no longer exists."
+    }
+  ],
+  "depends_on": [
+    "solari-scan"
+  ]
+}
