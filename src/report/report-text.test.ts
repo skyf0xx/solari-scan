@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReport, type Finding, type Scan } from "../domain/types.js";
-import { CLEAN_RUN_LINE, FRAMING_LINE, renderReportText } from "./report-text.js";
+import { CLEAN_RUN_LINE, SUSPICIOUS_LINE, renderReportText } from "./report-text.js";
 
 function makeScan(overrides: Partial<Scan> = {}): Scan {
   return {
@@ -25,13 +25,13 @@ function makeScan(overrides: Partial<Scan> = {}): Scan {
 }
 
 describe("renderReportText", () => {
-  it("collapses a clean run to exactly the one-line summary plus the framing line", () => {
+  it("collapses a clean run to exactly the one-line verdict", () => {
     const report = buildReport(makeScan(), []);
 
     const text = renderReportText(report);
     const lines = text.split("\n");
 
-    expect(lines).toEqual([CLEAN_RUN_LINE, FRAMING_LINE]);
+    expect(lines).toEqual([CLEAN_RUN_LINE]);
   });
 
   it("itemizes each finding with its kind, detail, and producedBy step", () => {
@@ -60,16 +60,7 @@ describe("renderReportText", () => {
     expect(text).not.toContain(CLEAN_RUN_LINE);
   });
 
-  it("states the observed-behavior framing line exactly once for a clean run", () => {
-    const report = buildReport(makeScan(), []);
-
-    const text = renderReportText(report);
-    const occurrences = text.split(FRAMING_LINE).length - 1;
-
-    expect(occurrences).toBe(1);
-  });
-
-  it("states the observed-behavior framing line exactly once when findings are present", () => {
+  it("states the suspicious-activity verdict exactly once when findings are present", () => {
     const findings: Finding[] = [
       { kind: "network", detail: "a.example", producedBy: "classify" },
       { kind: "network", detail: "b.example", producedBy: "classify" },
@@ -78,23 +69,16 @@ describe("renderReportText", () => {
     const report = buildReport(makeScan(), findings);
 
     const text = renderReportText(report);
-    const occurrences = text.split(FRAMING_LINE).length - 1;
+    const occurrences = text.split(SUSPICIOUS_LINE).length - 1;
 
     expect(occurrences).toBe(1);
   });
 
-  it("never renders the words 'safe' or 'unsafe', clean or itemized", () => {
-    const cleanText = renderReportText(buildReport(makeScan(), []));
-    const itemizedText = renderReportText(
-      buildReport(makeScan(), [
-        { kind: "network", detail: "evil.example", producedBy: "classify" },
-        { kind: "filesystem", detail: "/etc/passwd", producedBy: "post-run-snapshot" },
-      ]),
-    );
+  it("does not print the suspicious-activity verdict on a clean run", () => {
+    const report = buildReport(makeScan(), []);
 
-    for (const text of [cleanText, itemizedText]) {
-      expect(text.toLowerCase()).not.toMatch(/\bsafe\b/);
-      expect(text.toLowerCase()).not.toMatch(/\bunsafe\b/);
-    }
+    const text = renderReportText(report);
+
+    expect(text).not.toContain(SUSPICIOUS_LINE);
   });
 });
