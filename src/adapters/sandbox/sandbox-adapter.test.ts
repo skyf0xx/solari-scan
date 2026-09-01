@@ -179,6 +179,16 @@ describe("SandboxAdapter", () => {
     expect(result).toEqual({ exitCode: 0 });
   });
 
+  it("forwards cwd to sandbox.commands.run so install/build execute inside the cloned repo", async () => {
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+    runMock.mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
+
+    await adapter.runCommand("npm ci", { cwd: "repo" });
+
+    expect(runMock).toHaveBeenCalledWith("npm", expect.objectContaining({ cwd: "repo" }));
+  });
+
   it("splits a multi-word command line into a bare executable plus args", async () => {
     // Confirmed live: sandbox.commands.run execs `cmd` as a literal
     // filename rather than shell-interpreting it — passing "npm install"

@@ -141,6 +141,7 @@ export class SandboxAdapter implements SandboxPort {
     try {
       const result = await sandbox.commands.run(executable, {
         ...(args.length > 0 ? { args } : {}),
+        ...(options?.cwd !== undefined ? { cwd: options.cwd } : {}),
         ...(options?.env !== undefined ? { env: options.env } : {}),
         ...(options?.onStdout !== undefined ? { onStdout: options.onStdout } : {}),
         ...(options?.onStderr !== undefined ? { onStderr: options.onStderr } : {}),
