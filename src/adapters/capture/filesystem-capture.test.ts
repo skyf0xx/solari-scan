@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FALLBACK_SANDBOX_ROOT, FilesystemCaptureAdapter, MAX_HASHABLE_BYTES } from "./filesystem-capture.js";
+import { FALLBACK_SANDBOX_ROOT, FilesystemCaptureAdapter, MAX_HASHABLE_BYTES, MAX_WALK_DEPTH } from "./filesystem-capture.js";
 import type {
   SandboxCommandHandle,
   SandboxCommandOptions,
@@ -425,6 +425,53 @@ describe("FilesystemCaptureAdapter root discovery", () => {
 
   it("exposes the fallback root as FALLBACK_SANDBOX_ROOT for callers to reason about degraded mode", () => {
     expect(FALLBACK_SANDBOX_ROOT).toBe(".");
+  });
+});
+
+/** A `SandboxGuestAccess` whose `list()` reports one ever-deeper nested
+ *  directory no matter what path it's asked about — simulates a directory
+ *  symlink cycle (e.g. a base image's `dir/x` pointing back at an ancestor),
+ *  which the real SDK's `FsEntry`/`FsStat` give no inode/symlink identity to
+ *  detect directly (see `MAX_WALK_DEPTH`'s doc comment). Counts calls so
+ *  tests can assert the walk actually stopped rather than exhausting time or
+ *  memory. */
+class InfiniteNestingSandboxFiles implements SandboxGuestAccess {
+  listCalls = 0;
+
+  async write(): Promise<void> {
+    throw new Error("not used in this test");
+  }
+  async start(): Promise<SandboxCommandHandle> {
+    throw new Error("not used in this test");
+  }
+  async run(): Promise<SandboxRunResult> {
+    return { exitCode: 0, stdout: "/home/solari\n" };
+  }
+  async list(_path: string): Promise<SandboxFsEntry[]> {
+    this.listCalls += 1;
+    return [{ name: "loop", dir: true, size: 0 }];
+  }
+  async stat(): Promise<SandboxFsStat> {
+    throw new Error("not used in this test");
+  }
+  async read(): Promise<Uint8Array> {
+    throw new Error("not used in this test");
+  }
+}
+
+describe("FilesystemCaptureAdapter walk depth cap", () => {
+  it("terminates a cyclic/unbounded directory tree instead of recursing forever", async () => {
+    // Confirmed live: a directory symlink loop inside an allowed root child
+    // (past the "/" allowlist, which only restricts one level) hung a scan
+    // indefinitely — every list()/stat()/read() a real ~330ms RPC with
+    // nothing timing the walk out. This proves the depth cap bounds it.
+    const files = new InfiniteNestingSandboxFiles();
+    const adapter = new FilesystemCaptureAdapter(files);
+
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(files.listCalls).toBeLessThanOrEqual(MAX_WALK_DEPTH + 2);
+    expect(snapshot.entries.some((e) => e.hash === "walk-depth-exceeded")).toBe(true);
   });
 });
 

@@ -80,6 +80,28 @@ export const FALLBACK_SANDBOX_ROOT = ".";
  */
 export const MAX_HASHABLE_BYTES = 50 * 1024 * 1024; // 50 MiB
 
+/**
+ * Hard cap on recursion depth from the walk root. `SandboxFsEntry`/`SandboxFsStat`
+ * (mirroring the real SDK's `FsEntry`/`FsStat`) carry no inode/symlink
+ * identity, so a directory symlink that loops back on an ancestor (e.g. a
+ * base image's `/root/x` pointing at `/`) can't be detected and skipped by
+ * identity — it looks exactly like a real, ever-deeper subtree. Confirmed
+ * live: exactly this hung a scan indefinitely inside an allowed root child
+ * (past the allowlist, which only restricts "/"'s immediate children — see
+ * `isAllowedRootChild`), each `list`/`stat`/`read` still a real ~330ms RPC
+ * with nothing timing the walk out. A depth cap bounds it deterministically
+ * regardless of cause (a true cycle or just a surprisingly deep real tree)
+ * without needing symlink identity the sandbox API doesn't expose. 40 is
+ * generously above any real install/build tree seen live (node_modules
+ * nesting included) while still bounding a cycle to a small, fast multiple
+ * of the RPC cost instead of an unbounded hang.
+ */
+export const MAX_WALK_DEPTH = 40;
+
+function walkDepthSentinelHash(): string {
+  return "walk-depth-exceeded";
+}
+
 function oversizedSentinelHash(size: number, modTimeMs: number): string {
   return `oversized:${size}:${modTimeMs}`;
 }
@@ -150,7 +172,7 @@ export class FilesystemCaptureAdapter {
     // OS image (see this file's header). A `pwd` that already reports a
     // small, scoped directory (e.g. "/home/solari") is itself the correct,
     // narrow walk root and needs no further restriction.
-    await this.walk(root, root === "/", entries);
+    await this.walk(root, root === "/", 0, entries);
     return { entries };
   }
 
@@ -189,7 +211,15 @@ export class FilesystemCaptureAdapter {
    * allowed child (`home`, `root`, `tmp`, the repo dir) everything under it
    * is walked without further restriction.
    */
-  private async walk(dir: string, restrictChildren: boolean, out: SnapshotEntry[]): Promise<void> {
+  private async walk(dir: string, restrictChildren: boolean, depth: number, out: SnapshotEntry[]): Promise<void> {
+    if (depth > MAX_WALK_DEPTH) {
+      // See `MAX_WALK_DEPTH`'s doc comment: no symlink identity is available
+      // to detect a cycle directly, so this is the backstop that turns an
+      // unbounded hang into a bounded, reported-and-moves-on entry instead.
+      out.push({ path: dir, hash: walkDepthSentinelHash() });
+      return;
+    }
+
     let listing;
     try {
       listing = await this.files.list(dir);
@@ -209,7 +239,7 @@ export class FilesystemCaptureAdapter {
         if (restrictChildren && !isAllowedRootChild(entry.name)) {
           continue;
         }
-        await this.walk(path, false, out);
+        await this.walk(path, false, depth + 1, out);
         continue;
       }
       out.push({ path, hash: await this.hashFile(path) });
