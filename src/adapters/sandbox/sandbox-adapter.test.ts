@@ -170,12 +170,37 @@ describe("SandboxAdapter", () => {
       onStderr,
     });
 
-    expect(runMock).toHaveBeenCalledWith("npm install", {
+    expect(runMock).toHaveBeenCalledWith("npm", {
+      args: ["install"],
       env: { HTTP_PROXY: "http://127.0.0.1:8080", HTTPS_PROXY: "http://127.0.0.1:8080" },
       onStdout,
       onStderr,
     });
     expect(result).toEqual({ exitCode: 0 });
+  });
+
+  it("splits a multi-word command line into a bare executable plus args", async () => {
+    // Confirmed live: sandbox.commands.run execs `cmd` as a literal
+    // filename rather than shell-interpreting it — passing "npm install"
+    // straight through fails with "executable file not found in $PATH"
+    // (it looks for a file literally named "npm install").
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+    runMock.mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
+
+    await adapter.runCommand("pip install -r requirements.txt");
+
+    expect(runMock).toHaveBeenCalledWith("pip", expect.objectContaining({ args: ["install", "-r", "requirements.txt"] }));
+  });
+
+  it("does not pass an args field for a single-word command", async () => {
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+    runMock.mockResolvedValueOnce({ exitCode: 0, stdout: "", stderr: "" });
+
+    await adapter.runCommand("pwd");
+
+    expect(runMock).toHaveBeenCalledWith("pwd", expect.not.objectContaining({ args: expect.anything() }));
   });
 
   it("destroys by delegating to sandbox.kill", async () => {

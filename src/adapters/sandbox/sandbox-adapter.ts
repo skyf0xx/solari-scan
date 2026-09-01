@@ -41,6 +41,27 @@ function prLocalBranch(prNumber: number): string {
   return `pr-${prNumber}`;
 }
 
+/**
+ * Splits a shell-style command line ("npm install", "pip install -r
+ * requirements.txt") into an executable name plus its arguments. Confirmed
+ * live: `sandbox.commands.run(cmd, opts)` execs `cmd` as a literal filename
+ * — it does not shell-interpret it — so passing `"npm install"` straight
+ * through as `cmd` fails with "executable file not found in $PATH" (it
+ * looks for a file literally named `npm install`), even though `npm` alone
+ * resolves fine. The SDK's own internal usage (`handle.js`'s `git.clone`
+ * fetch step) confirms the intended shape: bare executable in `cmd`,
+ * arguments in a separate `args` array. `domain/package-manager.ts`'s
+ * `DetectedCommands` fields stay a single command-line string — a
+ * reasonable domain-level concept — this split is purely an SDK-call-site
+ * concern, so it's confined here. Plain whitespace splitting is sufficient:
+ * every command `package-manager.ts` can produce is a fixed, known string
+ * with no quoted or space-containing arguments.
+ */
+function splitCommandLine(cmd: string): [string, ...string[]] {
+  const [executable, ...args] = cmd.trim().split(/\s+/);
+  return [executable as string, ...args];
+}
+
 export class SandboxAdapter implements SandboxPort {
   private readonly client: SandboxClient;
   private sandbox: Sandbox | undefined;
@@ -116,8 +137,10 @@ export class SandboxAdapter implements SandboxPort {
 
   async runCommand(cmd: string, options?: RunCommandOptions): Promise<RunCommandResult> {
     const sandbox = this.requireSandbox();
+    const [executable, ...args] = splitCommandLine(cmd);
     try {
-      const result = await sandbox.commands.run(cmd, {
+      const result = await sandbox.commands.run(executable, {
+        ...(args.length > 0 ? { args } : {}),
         ...(options?.env !== undefined ? { env: options.env } : {}),
         ...(options?.onStdout !== undefined ? { onStdout: options.onStdout } : {}),
         ...(options?.onStderr !== undefined ? { onStderr: options.onStderr } : {}),
