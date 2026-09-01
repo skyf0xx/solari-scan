@@ -46,7 +46,7 @@ without changing the default fast path.
 7. With `--with-fs`: hashes the file tree again, diffs against the
    baseline.
 8. Classifies each destination against a hardcoded host allowlist
-   (registries, git hosts, common CDNs).
+   (registries, git hosts, common CDNs) — see [Host allowlist](#host-allowlist).
 9. Prints a report, writes `solari-scan-report.json`.
 10. Destroys the sandbox on every exit path — failure, crash, or
     interrupt.
@@ -70,6 +70,22 @@ caught it:
 ```
 Suspicious activity found.
 ```
+
+## Host allowlist
+
+Any outbound destination not on this list is reported as a network
+finding:
+
+- **Package registries**: `registry.npmjs.org`, `registry.yarnpkg.com`
+- **Git hosts**: `github.com`, `raw.githubusercontent.com`,
+  `codeload.github.com`, `gitlab.com`, `bitbucket.org`
+- **CDNs** (sometimes hit by postinstall scripts): `cdn.jsdelivr.net`,
+  `unpkg.com`
+
+Matching is exact, host by host — a subdomain isn't automatically
+allowed by its parent domain being listed (e.g.
+`objects.githubusercontent.com` is not covered by `github.com`). The
+list is project-wide, not configurable per scan.
 
 ## Future directions
 
