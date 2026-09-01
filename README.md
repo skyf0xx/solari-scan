@@ -1,6 +1,6 @@
 # solari-scan
 
-Test a GitHub repo or PR for supply-chain attacks before you clone it
+**Protects you** from **supply-chain attacks** before you clone it
 yourself.
 
 ![solari-scan console output](docs/console.png)
@@ -41,8 +41,8 @@ AI created more submissions to Open Source communities, but also brings the risk
 GitHub Actions and static scanners only read your code.
 
 Solari-scan clones the repo into an isolated microVM and actually
-runs install/postinstall there, so it catches what static analysis cannot
-see: *what the code does*.
+runs install/postinstall there, so it **catches what static analysis cannot
+see**: *what the code does*.
 
 ## Scan depth
 
