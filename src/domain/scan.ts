@@ -77,6 +77,7 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
     const { port: proxyPort, env: proxyEnv } = await ports.capture.startProxy();
 
     const installResult = await ports.sandbox.runCommand(detected.installCommand, {
+      cwd: REPO_DIR,
       env: proxyEnv,
       ...(output.onInstallOutput ? { onStdout: (data: string) => output.onInstallOutput?.("stdout", data) } : {}),
       ...(output.onInstallOutput ? { onStderr: (data: string) => output.onInstallOutput?.("stderr", data) } : {}),
@@ -85,6 +86,7 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
       installResult.exitCode === 0
         ? (
             await ports.sandbox.runCommand(detected.buildCommand, {
+              cwd: REPO_DIR,
               env: proxyEnv,
               ...(output.onBuildOutput ? { onStdout: (data: string) => output.onBuildOutput?.("stdout", data) } : {}),
               ...(output.onBuildOutput ? { onStderr: (data: string) => output.onBuildOutput?.("stderr", data) } : {}),

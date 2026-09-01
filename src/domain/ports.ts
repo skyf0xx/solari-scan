@@ -18,6 +18,11 @@ import type { ScanStep } from "./types.js";
 export type OutputCallback = (data: string) => void;
 
 export interface RunCommandOptions {
+  /** Working directory the command runs in, relative to the sandbox root
+   *  (e.g. the cloned repo's `CloneOptions.path`). Without this, the
+   *  command runs at the sandbox's default working directory rather than
+   *  inside the repo. */
+  cwd?: string;
   /** Per-command env vars (e.g. HTTP_PROXY/HTTPS_PROXY scoped to install/build only). */
   env?: Record<string, string>;
   onStdout?: OutputCallback;

@@ -126,6 +126,17 @@ describe("runScan", () => {
     }
   });
 
+  it("runs install and build inside the cloned repo directory, not the sandbox default cwd", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort();
+
+    await runScan(INPUT, { sandbox, capture });
+
+    for (const { options } of sandbox.commandsRun) {
+      expect(options?.cwd).toBe("repo");
+    }
+  });
+
   it("reports real observed telemetry values, not placeholders", async () => {
     const sandbox = new FakeSandboxPort();
     const capture = new FakeCapturePort({
