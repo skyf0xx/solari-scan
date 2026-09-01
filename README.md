@@ -24,7 +24,12 @@ Copy `.env.example` to `.env` and add your Solari API key first.
 2. node dist/index.js <pr link or repo link> [--with-fs]
 ```
 
-e.g. `node dist/index.js https://github.com/skyf0xx/polymarket`
+Try it:
+
+```
+node dist/index.js https://github.com/skyf0xx/polymarket   # clean
+node dist/index.js https://github.com/skyf0xx/bad-repo      # flagged
+```
 
 ## Is this PR Safe?
 
