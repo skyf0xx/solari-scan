@@ -1,7 +1,6 @@
 # solari-scan
 
-**Protects you** from **supply-chain attacks** before you clone it
-yourself.
+### Stops Supply Chain Attacks on their tracks.
 
 ![solari-scan console output](docs/console.png)
 
