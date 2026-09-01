@@ -7,7 +7,8 @@ yourself.
 
 ## Scan your PRs and repos in a secure environment
 
-Copy `.env.example` to `.env` and add your Solari API key first.
+### Set your API key
+Copy `.env.example` to `.env` and add your Solari API key first. (set global or local with `.env`)
 
 ### Global install
 
