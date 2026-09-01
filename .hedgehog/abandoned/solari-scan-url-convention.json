@@ -1,0 +1,5 @@
+{
+  "intent": "solari-scan-url-convention",
+  "reason": "depends_on was documentation-only, not a real gate; unintended worktree isolation for a re-entry intent that should compile straight into trunk",
+  "abandoned_at": "2026-09-01T12:19:55.505Z"
+}

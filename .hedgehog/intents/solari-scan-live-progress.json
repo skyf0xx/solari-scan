@@ -1,0 +1,34 @@
+{
+  "id": "solari-scan-live-progress",
+  "goal": "Give the scan visible, continuous progress narration throughout its run — never a long silent stretch with no output — and surface a non-zero install/build exit clearly the moment it happens rather than only at the end in the final report.",
+  "outcome": "A user watching solari-scan run never sees more than a few seconds of silence: sandbox provisioning, the gap before install/build's first output chunk, and the post-run snapshot/proxy-log-parse steps all show a heartbeat or spinner while otherwise silent. If install or build exits non-zero, a clear line prints immediately naming the command and its exit code (still not treated as a scan failure — runScan's own contract that a non-zero install/build exit is a finding, not an error, is unchanged; this is purely about narrating it live instead of only in the final report).",
+  "priority": 100,
+  "requirements": [
+    {
+      "id": "SOLARI-SCAN-LIVE-PROGRESS-RULE-1",
+      "kind": "rule",
+      "statement": "Between renderProvisioningStartLine() and the sandbox actually being provisioned, a spinner or periodic heartbeat prints so a real API delay is visibly distinguishable from a hang, without changing SandboxAdapter.provision()'s own contract (report layer / command layer concern, not domain)."
+    },
+    {
+      "id": "SOLARI-SCAN-LIVE-PROGRESS-RULE-2",
+      "kind": "rule",
+      "statement": "Between 'Running install...'/'Running build...' printing and that command's first stdout/stderr chunk arriving, a spinner or heartbeat fills the gap rather than bare silence."
+    },
+    {
+      "id": "SOLARI-SCAN-LIVE-PROGRESS-RULE-3",
+      "kind": "rule",
+      "statement": "The post-run snapshot and proxy-log-parse steps (currently narrated only as a burst after runScan resolves) get some live indication they are in progress if they take non-trivial time, not just a line after the fact."
+    },
+    {
+      "id": "SOLARI-SCAN-LIVE-PROGRESS-RULE-4",
+      "kind": "rule",
+      "statement": "The moment install or build exits non-zero, a clear line prints immediately naming the command and exit code — still narrated as a fact, not an error, per runScan's existing 'non-zero install/build exit is not a scan failure' contract. This does not change domain/scan.ts's control flow or ScanOutput's existing shape unless a genuine gap is found."
+    },
+    {
+      "id": "SOLARI-SCAN-LIVE-PROGRESS-RULE-5",
+      "kind": "rule",
+      "statement": "runScan's own domain contract (non-zero install/build exit is a finding, not a thrown error; scan continues to capture and report regardless) is unchanged — this intent is about when/how progress is narrated, not what counts as a finding or a failure."
+    }
+  ],
+  "depends_on": []
+}
