@@ -49,7 +49,7 @@ Solari-scan clones the repo into an isolated microVM and actually
 runs install/postinstall there, so it **catches what static analysis cannot
 see**: *what the code does*.
 
-## Scan depth
+### Scan depth
 
 - **Default (fast)** — network traffic checked against an allowlist for exfiltration attacks.
 - **`--with-fs` (deep)** — also detects unexpected filesystem writes.
