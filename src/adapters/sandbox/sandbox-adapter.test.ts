@@ -10,6 +10,7 @@ const {
   createMock,
   killClientMock,
   sandboxKillMock,
+  connectMock,
   cloneMock,
   listMock,
   runMock,
@@ -57,6 +58,7 @@ const {
     createMock: vi.fn(),
     killClientMock: vi.fn(),
     sandboxKillMock: vi.fn(),
+    connectMock: vi.fn().mockResolvedValue(undefined),
     cloneMock: vi.fn(),
     listMock: vi.fn(),
     runMock: vi.fn(),
@@ -88,6 +90,7 @@ import { SandboxAdapter } from "./sandbox-adapter.js";
 function makeFakeSandbox() {
   return {
     sandboxId: "sbx-1",
+    connect: connectMock,
     git: { clone: cloneMock },
     files: { list: listMock },
     commands: { run: runMock },
@@ -109,6 +112,17 @@ describe("SandboxAdapter", () => {
     const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
     await adapter.provision();
     expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the control channel via connect() before the sandbox is usable", async () => {
+    // Confirmed against a live sandbox: create() returns a handle whose
+    // control WebSocket is not yet open — every other method (.git/
+    // .commands/.files) rejects with "Not connected — call connect() first"
+    // until connect() has resolved. provision() must call it before storing
+    // the handle for later use.
+    const adapter = new SandboxAdapter({ apiKey: "key-123", baseUrl: "https://api.solari.test" });
+    await adapter.provision();
+    expect(connectMock).toHaveBeenCalledTimes(1);
   });
 
   it("clones normally, then fetches and checks out the PR ref as a local branch, in order", async () => {

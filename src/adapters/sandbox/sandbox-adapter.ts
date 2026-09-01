@@ -54,7 +54,15 @@ export class SandboxAdapter implements SandboxPort {
 
   async provision(): Promise<void> {
     try {
-      this.sandbox = await this.client.create();
+      const sandbox = await this.client.create();
+      // `create()` returns a handle whose control WebSocket is not yet
+      // open — `connect()` must be called before `.git`/`.commands`/
+      // `.files` (all of which go over that channel) or every one of them
+      // rejects with "Not connected — call connect() first". Confirmed
+      // against a live sandbox during this build: the SDK's own type
+      // doc-comments don't state this ordering requirement explicitly.
+      await sandbox.connect();
+      this.sandbox = sandbox;
     } catch (err) {
       throw mapSdkError(err, "Sandbox provisioning failed for an unknown reason.");
     }
