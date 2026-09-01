@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { detectPackageManager } from "./package-manager.js";
 
 describe("detectPackageManager", () => {
-  it("prefers pnpm-lock.yaml over package.json", () => {
-    expect(detectPackageManager(["pnpm-lock.yaml", "package.json"])).toEqual({
-      installCommand: "pnpm install",
-      buildCommand: "pnpm run build",
+  it("prefers package-lock.json over package.json", () => {
+    expect(detectPackageManager(["package-lock.json", "package.json"])).toEqual({
+      installCommand: "npm ci",
+      buildCommand: "npm run build",
     });
   });
 

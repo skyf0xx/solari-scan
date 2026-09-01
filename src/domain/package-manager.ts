@@ -10,8 +10,6 @@ export interface DetectedCommands {
 }
 
 const DETECTION_RULES: ReadonlyArray<{ marker: string; commands: DetectedCommands }> = [
-  { marker: "pnpm-lock.yaml", commands: { installCommand: "pnpm install", buildCommand: "pnpm run build" } },
-  { marker: "yarn.lock", commands: { installCommand: "yarn install", buildCommand: "yarn run build" } },
   { marker: "package-lock.json", commands: { installCommand: "npm ci", buildCommand: "npm run build" } },
   { marker: "package.json", commands: { installCommand: "npm install", buildCommand: "npm run build" } },
   { marker: "requirements.txt", commands: { installCommand: "pip install -r requirements.txt", buildCommand: "python -m build" } },
