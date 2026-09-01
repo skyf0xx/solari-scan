@@ -12,8 +12,8 @@ export interface DetectedCommands {
 const DETECTION_RULES: ReadonlyArray<{ marker: string; commands: DetectedCommands }> = [
   { marker: "package-lock.json", commands: { installCommand: "npm ci", buildCommand: "npm run build" } },
   { marker: "package.json", commands: { installCommand: "npm install", buildCommand: "npm run build" } },
-  { marker: "requirements.txt", commands: { installCommand: "pip install -r requirements.txt", buildCommand: "python -m build" } },
-  { marker: "pyproject.toml", commands: { installCommand: "pip install .", buildCommand: "python -m build" } },
+  { marker: "requirements.txt", commands: { installCommand: "pip install -r requirements.txt", buildCommand: "python3 -m build" } },
+  { marker: "pyproject.toml", commands: { installCommand: "pip install .", buildCommand: "python3 -m build" } },
 ];
 
 /**
