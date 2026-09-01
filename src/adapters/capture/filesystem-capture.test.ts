@@ -53,7 +53,7 @@ class FakeSandboxFiles implements SandboxGuestAccess {
   }
 
   async list(path: string): Promise<SandboxFsEntry[]> {
-    const prefix = path === "." ? "" : `${path}/`;
+    const prefix = path === "." ? "" : path === "/" ? "/" : `${path}/`;
     const seen = new Map<string, boolean>();
 
     for (const filePath of this.files.keys()) {
@@ -369,5 +369,70 @@ describe("FilesystemCaptureAdapter root discovery", () => {
 
   it("exposes the fallback root as FALLBACK_SANDBOX_ROOT for callers to reason about degraded mode", () => {
     expect(FALLBACK_SANDBOX_ROOT).toBe(".");
+  });
+});
+
+describe("FilesystemCaptureAdapter walking a root of '/'", () => {
+  it("excludes Linux pseudo-filesystems (dev/proc/sys) from the walk", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/\n" };
+    files.setFile("/dev/null", "device");
+    files.setFile("/proc/cpuinfo", "cpu");
+    files.setFile("/sys/kernel/x", "kernel");
+    files.setFile("/home/solari/repo/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["/home/solari/repo/a.txt"]);
+  });
+
+  it("excludes read-only OS-userland trees (usr/bin/sbin/lib/lib64/boot/media/mnt/srv) from the walk", async () => {
+    // Confirmed live: a `pwd` root of "/" makes the walk otherwise recurse
+    // into /usr alone, which holds the entire OS userland — an
+    // effectively-unbounded walk. These trees are irrelevant to "did this
+    // repo's install/build write outside its own directory".
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/\n" };
+    files.setFile("/usr/lib/x.so", "lib");
+    files.setFile("/bin/sh", "shell");
+    files.setFile("/sbin/init", "init");
+    files.setFile("/lib/libc.so", "libc");
+    files.setFile("/lib64/ld.so", "ld");
+    files.setFile("/boot/vmlinuz", "kernel image");
+    files.setFile("/media/x", "media");
+    files.setFile("/mnt/x", "mount");
+    files.setFile("/srv/x", "srv");
+    files.setFile("/home/solari/repo/a.txt", "content");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path)).toEqual(["/home/solari/repo/a.txt"]);
+  });
+
+  it("still walks plausible install/build write targets (etc/var/run/tmp/home/root)", async () => {
+    const files = new FakeSandboxFiles();
+    files.pwdResult = { exitCode: 0, stdout: "/\n" };
+    files.setFile("/etc/npmrc", "etc");
+    files.setFile("/var/cache/x", "var");
+    files.setFile("/run/x.sock.txt", "run");
+    files.setFile("/tmp/x.tmp", "tmp");
+    files.setFile("/home/solari/.npm/cache.json", "home");
+    files.setFile("/root/.cache/x", "root");
+
+    const adapter = new FilesystemCaptureAdapter(files);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    expect(snapshot.entries.map((e) => e.path).sort()).toEqual(
+      [
+        "/etc/npmrc",
+        "/var/cache/x",
+        "/run/x.sock.txt",
+        "/tmp/x.tmp",
+        "/home/solari/.npm/cache.json",
+        "/root/.cache/x",
+      ].sort(),
+    );
   });
 });

@@ -82,12 +82,39 @@ function errorMessage(err: unknown): string {
  * per-entry unreadable-sentinel handling to survive walking them, which
  * would be correct but needlessly slow and fragile against trees this large
  * and this far outside what a filesystem-diff scan is meant to observe.
+ *
+ * Also excludes the base image's read-only OS-userland trees
+ * (`usr`/`bin`/`sbin`/`lib`/`lib64`/`boot`/`media`/`mnt`/`srv`) for the same
+ * reason, one level less exotic: confirmed live against a real sandbox that
+ * a `pwd` root of `/` makes the walk recurse into `/usr` alone, which holds
+ * the entire OS userland — tens of thousands of files, each hashed via a
+ * separate stat+read round trip, an effectively-unbounded walk (many
+ * minutes to hours) rather than a hang. An unprivileged install/build can't
+ * write to these paths anyway, and they're irrelevant to "did this repo's
+ * install/build write outside its own directory" — the scan's whole
+ * question. `etc`/`var`/`run`/`tmp`/`home`/`root` stay included: real
+ * install/build tooling (package-manager caches, `.npmrc`, temp files)
+ * plausibly writes there, so a change there is exactly the kind of finding
+ * this scan exists to surface.
  */
-const EXCLUDED_PSEUDO_FILESYSTEMS = new Set(["dev", "proc", "sys"]);
+const EXCLUDED_SYSTEM_PATHS = new Set([
+  "dev",
+  "proc",
+  "sys",
+  "usr",
+  "bin",
+  "sbin",
+  "lib",
+  "lib64",
+  "boot",
+  "media",
+  "mnt",
+  "srv",
+]);
 
 function isExcludedPseudoFilesystem(path: string): boolean {
   const normalized = path.startsWith("/") ? path.slice(1) : path;
-  return EXCLUDED_PSEUDO_FILESYSTEMS.has(normalized);
+  return EXCLUDED_SYSTEM_PATHS.has(normalized);
 }
 
 function joinPath(dir: string, name: string): string {
