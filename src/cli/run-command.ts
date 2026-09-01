@@ -40,46 +40,30 @@
  * no restructuring of `runScan` or `SandboxAdapter`, both of which are
  * locked, completed layers.
  *
- * --- The live-narration gap (flagged, not silently built around) ---
+ * --- Live narration ---
  *
  * The committed UX spec (`.hedgehog/BMAD/05-ux-spec/EXPERIENCE.md`) and PRD
- * (`.hedgehog/BMAD/04-prd.md`) both require: live per-step narration as each
- * of the seven steps completes (step 1 provisioning, step 2 clone, step 3
- * baseline snapshot count, step 4 proxy port, steps 5-6 live install/build
- * stdout/stderr streaming, step 7 post-run snapshot count, step 8 connection
- * count, step 10 teardown) — "no artificial delays... real step timing
- * only."
+ * (`.hedgehog/BMAD/04-prd.md`) require live per-step narration as each of
+ * the seven steps completes, including live install/build stdout/stderr
+ * streaming (steps 5-6) — "no artificial delays... real step timing only."
  *
- * `runScan`'s actual signature (`src/domain/scan.ts`) has NO progress hook,
- * callback, or emitter parameter — it takes `(input, ports)` and resolves
- * once with a final `Report`. It also does not forward `onStdout`/
- * `onStderr` when it calls `ports.sandbox.runCommand(detected.installCommand,
- * { env: proxyEnv })` (no third options field is passed), even though
- * `SandboxPort.runCommand` and `SandboxAdapter.runCommand` both already
- * accept and wire those callbacks through to the real SDK. So even the
- * install/build live-streaming requirement is not satisfiable through
- * `runScan` as currently exposed — the streaming plumbing exists one layer
- * down (`sandbox-adapter`) and one layer up (`ports.ts`'s
- * `RunCommandOptions`), but `scan.ts`'s own call site is the one place that
- * doesn't pass them through.
+ * `runScan`'s per-step facts (provisioning, clone, snapshot counts, proxy
+ * port, connection count, teardown) are still only known once `runScan`
+ * resolves — its signature reports a final `Report`, not per-step events —
+ * so those lines are narrated as a burst immediately after it resolves,
+ * reading real values off the final `Report` rather than live per-step
+ * events. That much was always true and is an acceptable reading of the
+ * spec: the values are real, never placeholders, just not each announced
+ * the instant its own step finishes.
  *
- * This is a genuine gap between the locked UX spec and `runScan`'s locked,
- * completed signature — `command` cannot fix it without changing
- * `domain/scan.ts`, which is out of this layer's scope and a Correction
- * Protocol case for `planner`/`domain`, not something to patch from here.
- *
- * What `command` builds instead, within its own scope: a "Running scan..."
- * line before calling `runScan`, then — once `runScan` resolves — every
- * `narration.ts` function is called once each, in step order, reading their
- * inputs off the final `Report`'s `scan.telemetry`/`scan.input`/
- * `scan.execution` fields rather than off live per-step events. This
- * produces the *shape* of the narrated sequence the UX spec describes (same
- * lines, same order, same real counts/ports — never placeholders) but all
- * printed in a burst after the scan finishes, not truly live during it, and
- * install/build stdout/stderr is not streamed at all in this build (neither
- * `command` nor `runScan` has a way to see it as it happens). Flagged
- * prominently in this task's final report rather than silently shipped as
- * if it met the live-streaming requirement.
+ * Install/build stdout/stderr is different: the UX spec calls for it to
+ * stream *during* the scan, and `runScan` now takes an optional third
+ * `ScanOutput` parameter (`onInstallOutput`/`onBuildOutput`, added via
+ * Correction Protocol after this layer's own INTENT CHECK caught the gap —
+ * see `domain/scan.ts`'s `ScanOutput` doc comment) built exactly for this.
+ * `command` passes real `stdout`/`stderr`-writing callbacks there, so
+ * install/build output reaches the terminal as it's produced, genuinely
+ * live, not narrated after the fact.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -98,7 +82,6 @@ import type { Report } from "../domain/types.js";
 import {
   renderBaselineSnapshotLine,
   renderCloneDoneLine,
-  renderCommandStartLine,
   renderPostRunSnapshotLine,
   renderProvisioningDoneLine,
   renderProvisioningStartLine,
@@ -188,6 +171,13 @@ export interface RunCommandDeps {
   /** Injectable for tests; defaults to real console/process/fs. */
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
+  /** Raw install/build output passthrough — unlike `stdout`/`stderr` above
+   *  (one call per narration *line*), these receive process output chunks
+   *  exactly as produced, with no newline added, so partial lines and
+   *  embedded newlines from the real process aren't corrupted. Defaults to
+   *  `process.stdout.write`/`process.stderr.write`. */
+  writeStdout?: (data: string) => void;
+  writeStderr?: (data: string) => void;
   writeReportJson?: (path: string, content: string) => Promise<void>;
 }
 
@@ -208,6 +198,8 @@ export interface RunCommandDeps {
 export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
   const stdout = deps.stdout ?? ((line: string) => console.log(line));
   const stderr = deps.stderr ?? ((line: string) => console.error(line));
+  const writeStdout = deps.writeStdout ?? ((data: string) => process.stdout.write(data));
+  const writeStderr = deps.writeStderr ?? ((data: string) => process.stderr.write(data));
   const writeReportJson = deps.writeReportJson ?? ((path: string, content: string) => writeFile(path, content, "utf8"));
 
   const sandboxAdapter = new SandboxAdapter({ apiKey: deps.config.apiKey, baseUrl: deps.config.baseUrl });
@@ -233,9 +225,37 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
   try {
     stdout(renderProvisioningStartLine());
 
+    // The full label ("Running install: npm install") names the detected
+    // command, which `runScan` only knows internally — it isn't available
+    // until `runScan` resolves, by which point the step's output has
+    // already streamed. So the *label* announcing each step prints
+    // (without the command name) right before that step's first output
+    // chunk arrives; the exact command is still shown truthfully in the
+    // final report text/JSON once known. This keeps output ordering
+    // correct (label before output) without guessing or delaying the
+    // command name.
+    let installStarted = false;
+    let buildStarted = false;
+
+    const onInstallOutput = (stream: "stdout" | "stderr", data: string): void => {
+      if (!installStarted) {
+        installStarted = true;
+        stdout("Running install...");
+      }
+      (stream === "stdout" ? writeStdout : writeStderr)(data);
+    };
+    const onBuildOutput = (stream: "stdout" | "stderr", data: string): void => {
+      if (!buildStarted) {
+        buildStarted = true;
+        stdout("Running build...");
+      }
+      (stream === "stdout" ? writeStdout : writeStderr)(data);
+    };
+
     const report = await runScan(
       { repoUrl: deps.args.repoUrl, prNumber: deps.args.prNumber },
       { sandbox: sandboxAdapter, capture: captureAdapter },
+      { onInstallOutput, onBuildOutput },
     );
 
     if (interrupted) {
@@ -275,9 +295,15 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
 }
 
 /**
- * Prints the full narrated sequence in step order, reading every fact off
- * the already-completed `Report` — see this file's header for why this is
- * a burst-after-the-fact rendering, not truly live per-step narration.
+ * Prints the narrated sequence for every step except install/build, reading
+ * each fact off the already-completed `Report` — see this file's header for
+ * why this remains a burst-after-the-fact rendering for these steps (their
+ * facts, unlike install/build's live output, are only known once `runScan`
+ * resolves). Install/build's own "Running install/build..." labels and
+ * output already printed live, during the scan — see `runCommand`'s
+ * `onInstallOutput`/`onBuildOutput` — so they're intentionally not repeated
+ * here; the exact command each ran is still shown in `renderReportText`'s
+ * output below.
  */
 function narrateFromReport(report: Report, stdout: (line: string) => void): void {
   const { scan } = report;
@@ -285,8 +311,6 @@ function narrateFromReport(report: Report, stdout: (line: string) => void): void
   stdout(renderCloneDoneLine(scan.input.repoUrl, scan.input.prNumber));
   stdout(renderBaselineSnapshotLine(scan.telemetry.filesHashedBaseline));
   stdout(renderProxyStartLine(scan.telemetry.proxyPort));
-  stdout(renderCommandStartLine("install", scan.execution.installCommand));
-  stdout(renderCommandStartLine("build", scan.execution.buildCommand));
   stdout(renderPostRunSnapshotLine(scan.telemetry.filesHashedPostRun));
   stdout(renderProxyLogParseLine(scan.telemetry.connectionsObserved));
   stdout(renderTeardownLine());

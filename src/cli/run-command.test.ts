@@ -333,13 +333,69 @@ describe("runCommand", () => {
     expect(lines.some((l) => l.includes("Cloned") && l.includes("PR #42"))).toBe(true);
     expect(lines.some((l) => l.includes("Baseline snapshot") && l.includes("10"))).toBe(true);
     expect(lines.some((l) => l.includes("Proxy listening on port 8080"))).toBe(true);
-    expect(lines.some((l) => l.includes("Running install: npm install"))).toBe(true);
-    expect(lines.some((l) => l.includes("Running build: npm run build"))).toBe(true);
     expect(lines.some((l) => l.includes("Post-run snapshot") && l.includes("12"))).toBe(true);
     expect(lines.some((l) => l.includes("observed 2 distinct connections"))).toBe(true);
     expect(lines.some((l) => l.includes("Sandbox destroyed"))).toBe(true);
     expect(lines.join("\n")).not.toContain("safe");
     expect(lines.join("\n")).not.toContain("unsafe");
+  });
+
+  it("streams install/build output live via onInstallOutput/onBuildOutput, printing a generic label before each step's first chunk", async () => {
+    // Correction Protocol: install/build stdout/stderr now streams live
+    // through runScan's ScanOutput callbacks rather than being narrated in
+    // a post-hoc burst — the full command name isn't known until runScan
+    // resolves, so the live label stays generic ("Running install...") and
+    // the exact command still appears in the final report text.
+    runScanMock.mockImplementation(async (_input, _ports, output) => {
+      output.onInstallOutput("stdout", "installing dep 1\n");
+      output.onInstallOutput("stderr", "a warning\n");
+      output.onBuildOutput("stdout", "building...\n");
+      return makeReport();
+    });
+
+    const stdout = vi.fn();
+    const writeStdout = vi.fn();
+    const writeStderr = vi.fn();
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      stdout,
+      stderr: vi.fn(),
+      writeStdout,
+      writeStderr,
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const lines = stdout.mock.calls.map(([line]) => line as string);
+    expect(lines).toContain("Running install...");
+    expect(lines).toContain("Running build...");
+    expect(writeStdout).toHaveBeenCalledWith("installing dep 1\n");
+    expect(writeStdout).toHaveBeenCalledWith("building...\n");
+    expect(writeStderr).toHaveBeenCalledWith("a warning\n");
+  });
+
+  it("prints each step's label only once even with multiple output chunks", async () => {
+    runScanMock.mockImplementation(async (_input, _ports, output) => {
+      output.onInstallOutput("stdout", "chunk 1\n");
+      output.onInstallOutput("stdout", "chunk 2\n");
+      return makeReport();
+    });
+
+    const stdout = vi.fn();
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      stdout,
+      stderr: vi.fn(),
+      writeStdout: vi.fn(),
+      writeStderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const lines = stdout.mock.calls.map(([line]) => line as string);
+    expect(lines.filter((l) => l === "Running install...")).toHaveLength(1);
   });
 
   it("registers and cleans up SIGINT/SIGTERM handlers around the scan", async () => {
