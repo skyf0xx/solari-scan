@@ -259,6 +259,111 @@ describe("runScan", () => {
     await expect(runScan(INPUT, { sandbox, capture })).resolves.toBeDefined();
   });
 
+  it("fires onProxyLogParseStart/onProxyLogParseDone around stopProxy with the real connection count", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort({
+      observedConnections: [{ host: "registry.npmjs.org" }, { host: "github.com" }],
+    });
+
+    const events: string[] = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onProxyLogParseStart: () => events.push("start"),
+        onProxyLogParseDone: (connectionsObserved) => events.push(`done:${connectionsObserved}`),
+      },
+    );
+
+    expect(events).toEqual(["start", "done:2"]);
+  });
+
+  it("fires onPostRunSnapshotStart/onPostRunSnapshotDone around the post-run snapshotFilesystem call with the real hashed-file count", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort({
+      baselineSnapshot: { entries: [{ path: "repo/a.txt", hash: "h1" }] },
+      postRunSnapshot: {
+        entries: [
+          { path: "repo/a.txt", hash: "h1" },
+          { path: "repo/b.txt", hash: "h2" },
+          { path: "repo/c.txt", hash: "h3" },
+        ],
+      },
+    });
+
+    const events: string[] = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onPostRunSnapshotStart: () => events.push("start"),
+        onPostRunSnapshotDone: (filesHashed) => events.push(`done:${filesHashed}`),
+      },
+    );
+
+    expect(events).toEqual(["start", "done:3"]);
+  });
+
+  it("fires proxy-log-parse and post-run-snapshot callbacks in scan order: proxy parse completes before the post-run snapshot starts", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort();
+
+    const events: string[] = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onProxyLogParseStart: () => events.push("proxyStart"),
+        onProxyLogParseDone: () => events.push("proxyDone"),
+        onPostRunSnapshotStart: () => events.push("snapshotStart"),
+        onPostRunSnapshotDone: () => events.push("snapshotDone"),
+      },
+    );
+
+    expect(events).toEqual(["proxyStart", "proxyDone", "snapshotStart", "snapshotDone"]);
+  });
+
+  it("does not fire onPostRunSnapshotStart/Done for the baseline snapshot call, only the post-run one", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort();
+
+    const startCalls: number[] = [];
+    const doneCalls: number[] = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onPostRunSnapshotStart: () => startCalls.push(1),
+        onPostRunSnapshotDone: (filesHashed) => doneCalls.push(filesHashed),
+      },
+    );
+
+    // FakeCapturePort's snapshotFilesystem is called twice (baseline, post-run);
+    // only the second (post-run) call should trigger these callbacks.
+    expect(capture.calls.filter((c) => c === "snapshotFilesystem")).toHaveLength(2);
+    expect(startCalls).toHaveLength(1);
+    expect(doneCalls).toHaveLength(1);
+  });
+
+  it("runs unchanged when onPostRunSnapshotStart/Done and onProxyLogParseStart/Done aren't provided", async () => {
+    const sandbox = new FakeSandboxPort();
+    const capture = new FakeCapturePort({
+      observedConnections: [{ host: "registry.npmjs.org" }],
+      filesystemChanges: [],
+    });
+
+    const report = await runScan(INPUT, { sandbox, capture });
+
+    expect(report.findings).toEqual([]);
+    expect(report.shape).toEqual({ kind: "clean" });
+    expect(report.scan.execution.failed).toBe(false);
+    expect(report.scan.telemetry.connectionsObserved).toBe(1);
+  });
+
   it("clones with the PR number when input.prNumber is present (existing PR behavior unchanged)", async () => {
     const sandbox = new FakeSandboxPort();
     const capture = new FakeCapturePort();

@@ -47,12 +47,32 @@ export interface ScanPorts {
  * all when build never ran (install already failed) — there is no build
  * exit code to report in that case, and firing it with a fabricated value
  * would violate the "never a plausible default" rule.
+ *
+ * `onPostRunSnapshotStart`/`onPostRunSnapshotDone` and
+ * `onProxyLogParseStart`/`onProxyLogParseDone` close the two remaining
+ * silent stretches the intent named (Correction Protocol: `command`'s own
+ * completed task confirmed it has no way to know when the post-run
+ * filesystem-snapshot-hashing step or the proxy-log-parsing step start or
+ * finish mid-scan — only once `runScan` fully resolves). Each pair wraps
+ * one already-awaited call — `ports.capture.snapshotFilesystem()` (the
+ * post-run call only; the baseline call isn't wrapped, since the intent's
+ * rule named the post-run step specifically) and `ports.capture.stopProxy()`
+ * (which returns the observed connections the proxy parsed from its log) —
+ * firing `*Start` immediately before the call and `*Done` immediately after
+ * it resolves, passing through the value already being computed
+ * (`filesHashedPostRun`'s count, `observedConnections`'s length). Same
+ * pattern as `onInstallExit`/`onBuildExit`: no new control flow, nothing
+ * `runScan` returns changes.
  */
 export interface ScanOutput {
   onInstallOutput?: (stream: "stdout" | "stderr", data: string) => void;
   onBuildOutput?: (stream: "stdout" | "stderr", data: string) => void;
   onInstallExit?: (exitCode: number) => void;
   onBuildExit?: (exitCode: number) => void;
+  onPostRunSnapshotStart?: () => void;
+  onPostRunSnapshotDone?: (filesHashed: number) => void;
+  onProxyLogParseStart?: () => void;
+  onProxyLogParseDone?: (connectionsObserved: number) => void;
 }
 
 /** Directory the repo is cloned into, relative to the sandbox root. Fixed
@@ -115,10 +135,14 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
           })()
         : { unavailable: true, reason: "build did not run because install exited non-zero" };
 
+    output.onProxyLogParseStart?.();
     const observedConnections = await ports.capture.stopProxy();
+    output.onProxyLogParseDone?.(observedConnections.length);
 
+    output.onPostRunSnapshotStart?.();
     const postRunSnapshot = await ports.capture.snapshotFilesystem();
     const filesHashedPostRun = postRunSnapshot.entries.length;
+    output.onPostRunSnapshotDone?.(filesHashedPostRun);
 
     const filesystemChanges = await ports.capture.diffFilesystem(baselineSnapshot, postRunSnapshot, REPO_DIR);
     for (const change of filesystemChanges) {
