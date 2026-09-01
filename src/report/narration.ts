@@ -64,3 +64,30 @@ export function renderProxyLogParseLine(connectionsObserved: ObservedCount | Una
 export function renderTeardownLine(): string {
   return "Sandbox destroyed.";
 }
+
+/** A "still working" line for `command` to print on a timer tick during a
+ *  silent stretch (sandbox provisioning, filesystem snapshot hashing, proxy
+ *  log parsing) — anywhere a step has started but has no intermediate fact
+ *  to narrate before it completes. `label` names what's in progress (e.g.
+ *  "Provisioning sandbox", "Hashing post-run snapshot") and is rendered
+ *  as-is, not reworded here, so callers reuse the same wording their
+ *  start-of-step line already used. `elapsedSeconds` is truncated to a
+ *  whole number by the caller's timer, not here. */
+export function renderHeartbeatLine(label: string, elapsedSeconds: number): string {
+  return `${label}... (${elapsedSeconds}s)`;
+}
+
+/** Step 5: install command's exit code, known the instant it resolves —
+ *  narrated immediately rather than only surfacing in the final report. A
+ *  non-zero exit here is a finding to report, not a scan failure, so this
+ *  states the number plainly with no alarm/error framing. */
+export function renderInstallExitLine(exitCode: number): string {
+  return `Install exited ${exitCode}.`;
+}
+
+/** Step 6: build command's exit code, known the instant it resolves. Never
+ *  called when build didn't run (install already failed) — see
+ *  `domain/scan.ts`'s `onBuildExit` doc comment. */
+export function renderBuildExitLine(exitCode: number): string {
+  return `Build exited ${exitCode}.`;
+}

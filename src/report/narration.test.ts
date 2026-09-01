@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Unavailable } from "../domain/types.js";
 import {
   renderBaselineSnapshotLine,
+  renderBuildExitLine,
   renderCloneDoneLine,
   renderCommandStartLine,
+  renderHeartbeatLine,
+  renderInstallExitLine,
   renderPostRunSnapshotLine,
   renderProvisioningDoneLine,
   renderProvisioningStartLine,
@@ -93,6 +96,47 @@ describe("narration lines", () => {
     expect(renderTeardownLine().toLowerCase()).toContain("destroyed");
   });
 
+  it("renders a heartbeat line naming the label and elapsed seconds", () => {
+    const line = renderHeartbeatLine("Provisioning sandbox", 12);
+
+    expect(line).toContain("Provisioning sandbox");
+    expect(line).toContain("12");
+  });
+
+  it("renders the label as-is in a heartbeat line without rewording it", () => {
+    expect(renderHeartbeatLine("Hashing post-run snapshot", 3)).toContain("Hashing post-run snapshot");
+  });
+
+  it("renders zero elapsed seconds distinctly, not blank", () => {
+    const line = renderHeartbeatLine("Provisioning sandbox", 0);
+
+    expect(line).toContain("0");
+  });
+
+  it("renders the install exit code, including a zero exit", () => {
+    expect(renderInstallExitLine(0)).toContain("0");
+  });
+
+  it("renders a non-zero install exit code without alarm framing", () => {
+    const line = renderInstallExitLine(1);
+
+    expect(line).toContain("1");
+    expect(line.toLowerCase()).not.toMatch(/\berror\b/);
+    expect(line.toLowerCase()).not.toMatch(/\bfail(ed|ure)?\b/);
+  });
+
+  it("renders the build exit code, including a zero exit", () => {
+    expect(renderBuildExitLine(0)).toContain("0");
+  });
+
+  it("renders a non-zero build exit code without alarm framing", () => {
+    const line = renderBuildExitLine(127);
+
+    expect(line).toContain("127");
+    expect(line.toLowerCase()).not.toMatch(/\berror\b/);
+    expect(line.toLowerCase()).not.toMatch(/\bfail(ed|ure)?\b/);
+  });
+
   it("never renders the words 'safe' or 'unsafe' in any narration line", () => {
     const lines = [
       renderProvisioningStartLine(),
@@ -109,6 +153,11 @@ describe("narration lines", () => {
       renderProxyLogParseLine(3),
       renderProxyLogParseLine(UNAVAILABLE),
       renderTeardownLine(),
+      renderHeartbeatLine("Provisioning sandbox", 5),
+      renderInstallExitLine(0),
+      renderInstallExitLine(1),
+      renderBuildExitLine(0),
+      renderBuildExitLine(1),
     ];
 
     for (const line of lines) {
