@@ -1,0 +1,140 @@
+import { describe, expect, it, vi } from "vitest";
+import { createSandboxGuestAccess, type SandboxHandleSource } from "./guest-access.js";
+
+function makeFakeSandbox() {
+  return {
+    files: {
+      list: vi.fn(),
+      stat: vi.fn(),
+      read: vi.fn(),
+      write: vi.fn(),
+    },
+    commands: {
+      start: vi.fn(),
+    },
+  };
+}
+
+function makeSource(sandbox: ReturnType<typeof makeFakeSandbox>): SandboxHandleSource {
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    requireSandboxHandle: () => sandbox as any,
+  };
+}
+
+describe("createSandboxGuestAccess", () => {
+  it("delegates list() to sandbox.files.list and maps FsEntry fields", async () => {
+    const sandbox = makeFakeSandbox();
+    sandbox.files.list.mockResolvedValue([{ name: "a.txt", dir: false, size: 12 }]);
+    const guest = createSandboxGuestAccess(makeSource(sandbox));
+
+    const entries = await guest.list("repo");
+
+    expect(sandbox.files.list).toHaveBeenCalledWith("repo");
+    expect(entries).toEqual([{ name: "a.txt", dir: false, size: 12 }]);
+  });
+
+  it("delegates stat() to sandbox.files.stat and maps FsStat fields", async () => {
+    const sandbox = makeFakeSandbox();
+    sandbox.files.stat.mockResolvedValue({
+      name: "a.txt",
+      dir: false,
+      size: 12,
+      mode: 0o644,
+      modTimeMs: 1700000000000,
+    });
+    const guest = createSandboxGuestAccess(makeSource(sandbox));
+
+    const stat = await guest.stat("repo/a.txt");
+
+    expect(sandbox.files.stat).toHaveBeenCalledWith("repo/a.txt");
+    expect(stat).toEqual({
+      name: "a.txt",
+      dir: false,
+      size: 12,
+      mode: 0o644,
+      modTimeMs: 1700000000000,
+    });
+  });
+
+  it("delegates read() to sandbox.files.read", async () => {
+    const sandbox = makeFakeSandbox();
+    const bytes = new Uint8Array([1, 2, 3]);
+    sandbox.files.read.mockResolvedValue(bytes);
+    const guest = createSandboxGuestAccess(makeSource(sandbox));
+
+    const result = await guest.read("repo/a.bin");
+
+    expect(sandbox.files.read).toHaveBeenCalledWith("repo/a.bin");
+    expect(result).toBe(bytes);
+  });
+
+  it("delegates write() to sandbox.files.write", async () => {
+    const sandbox = makeFakeSandbox();
+    sandbox.files.write.mockResolvedValue(undefined);
+    const guest = createSandboxGuestAccess(makeSource(sandbox));
+
+    await guest.write("/tmp/proxy.py", "print('hi')");
+
+    expect(sandbox.files.write).toHaveBeenCalledWith("/tmp/proxy.py", "print('hi')");
+  });
+
+  it("delegates start() to sandbox.commands.start and wraps the returned handle", async () => {
+    const sandbox = makeFakeSandbox();
+    const onData = vi.fn();
+    const wait = vi.fn().mockResolvedValue(0);
+    const kill = vi.fn().mockResolvedValue(undefined);
+    sandbox.commands.start.mockResolvedValue({ onData, wait, kill, cmdId: "cmd-1", stdin: vi.fn() });
+    const guest = createSandboxGuestAccess(makeSource(sandbox));
+
+    const handle = await guest.start("python3", { args: ["/tmp/proxy.py"], background: true });
+
+    expect(sandbox.commands.start).toHaveBeenCalledWith("python3", {
+      args: ["/tmp/proxy.py"],
+      background: true,
+    });
+
+    const cb = vi.fn();
+    handle.onData(cb);
+    expect(onData).toHaveBeenCalledWith(cb);
+
+    await handle.wait();
+    expect(wait).toHaveBeenCalledTimes(1);
+
+    await handle.kill(9);
+    expect(kill).toHaveBeenCalledWith(9);
+  });
+
+  it("resolves the sandbox handle lazily: fails if requireSandboxHandle throws at call time", async () => {
+    const source: SandboxHandleSource = {
+      requireSandboxHandle: () => {
+        throw new Error("not provisioned yet");
+      },
+    };
+    const guest = createSandboxGuestAccess(source);
+
+    await expect(guest.list("repo")).rejects.toThrow("not provisioned yet");
+  });
+
+  it("re-resolves the sandbox handle on every call (supports provisioning after construction)", async () => {
+    let provisioned: ReturnType<typeof makeFakeSandbox> | undefined;
+    const source: SandboxHandleSource = {
+      requireSandboxHandle: () => {
+        if (!provisioned) {
+          throw new Error("not provisioned yet");
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return provisioned as any;
+      },
+    };
+    const guest = createSandboxGuestAccess(source);
+
+    await expect(guest.list("repo")).rejects.toThrow("not provisioned yet");
+
+    provisioned = makeFakeSandbox();
+    provisioned.files.list.mockResolvedValue([{ name: "b.txt", dir: false, size: 1 }]);
+
+    const entries = await guest.list("repo");
+    expect(entries).toEqual([{ name: "b.txt", dir: false, size: 1 }]);
+  });
+});
