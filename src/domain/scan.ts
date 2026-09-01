@@ -36,10 +36,23 @@ export interface ScanPorts {
  * through to the real SDK — the one gap in an otherwise-complete plumbing
  * path). Optional and separate from `ScanPorts`: it's an output sink, not a
  * dependency `domain`'s own logic branches on.
+ *
+ * `onInstallExit`/`onBuildExit` close a related gap: before their addition,
+ * `ports.sandbox.runCommand`'s resolved exit code was only observable once
+ * `runScan` fully returned its final `Report` — `command` had no signal to
+ * narrate a non-zero install/build exit "the moment it happens" the way it
+ * can for output text. Each fires synchronously right after the matching
+ * `runCommand` call resolves, with the real exit code (never a placeholder),
+ * before the rest of the scan's steps run. `onBuildExit` is not called at
+ * all when build never ran (install already failed) — there is no build
+ * exit code to report in that case, and firing it with a fabricated value
+ * would violate the "never a plausible default" rule.
  */
 export interface ScanOutput {
   onInstallOutput?: (stream: "stdout" | "stderr", data: string) => void;
   onBuildOutput?: (stream: "stdout" | "stderr", data: string) => void;
+  onInstallExit?: (exitCode: number) => void;
+  onBuildExit?: (exitCode: number) => void;
 }
 
 /** Directory the repo is cloned into, relative to the sandbox root. Fixed
@@ -86,16 +99,20 @@ export async function runScan(input: ScanInput, ports: ScanPorts, output: ScanOu
       ...(output.onInstallOutput ? { onStdout: (data: string) => output.onInstallOutput?.("stdout", data) } : {}),
       ...(output.onInstallOutput ? { onStderr: (data: string) => output.onInstallOutput?.("stderr", data) } : {}),
     });
+    output.onInstallExit?.(installResult.exitCode);
+
     const buildExitCode: ExecutionResult["buildExitCode"] =
       installResult.exitCode === 0
-        ? (
-            await ports.sandbox.runCommand(detected.buildCommand, {
+        ? await (async () => {
+            const buildResult = await ports.sandbox.runCommand(detected.buildCommand, {
               cwd: REPO_DIR,
               env: proxyEnv,
               ...(output.onBuildOutput ? { onStdout: (data: string) => output.onBuildOutput?.("stdout", data) } : {}),
               ...(output.onBuildOutput ? { onStderr: (data: string) => output.onBuildOutput?.("stderr", data) } : {}),
-            })
-          ).exitCode
+            });
+            output.onBuildExit?.(buildResult.exitCode);
+            return buildResult.exitCode;
+          })()
         : { unavailable: true, reason: "build did not run because install exited non-zero" };
 
     const observedConnections = await ports.capture.stopProxy();

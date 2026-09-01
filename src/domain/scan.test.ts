@@ -190,6 +190,68 @@ describe("runScan", () => {
     ]);
   });
 
+  it("fires onInstallExit and onBuildExit with the real exit codes right as each command resolves", async () => {
+    const sandbox = new FakeSandboxPort({
+      commandResults: { "npm install": { exitCode: 0 }, "npm run build": { exitCode: 0 } },
+    });
+    const capture = new FakeCapturePort();
+
+    const events: Array<{ kind: string; exitCode: number }> = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onInstallExit: (exitCode) => events.push({ kind: "install", exitCode }),
+        onBuildExit: (exitCode) => events.push({ kind: "build", exitCode }),
+      },
+    );
+
+    expect(events).toEqual([
+      { kind: "install", exitCode: 0 },
+      { kind: "build", exitCode: 0 },
+    ]);
+  });
+
+  it("fires onInstallExit with the non-zero exit code and never fires onBuildExit when install fails", async () => {
+    const sandbox = new FakeSandboxPort({
+      commandResults: { "npm install": { exitCode: 1 } },
+    });
+    const capture = new FakeCapturePort();
+
+    const installExits: number[] = [];
+    const buildExits: number[] = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      {
+        onInstallExit: (exitCode) => installExits.push(exitCode),
+        onBuildExit: (exitCode) => buildExits.push(exitCode),
+      },
+    );
+
+    expect(installExits).toEqual([1]);
+    expect(buildExits).toEqual([]);
+  });
+
+  it("fires onBuildExit with a non-zero build exit code", async () => {
+    const sandbox = new FakeSandboxPort({
+      commandResults: { "npm run build": { exitCode: 2 } },
+    });
+    const capture = new FakeCapturePort();
+
+    const buildExits: number[] = [];
+
+    await runScan(
+      INPUT,
+      { sandbox, capture },
+      { onBuildExit: (exitCode) => buildExits.push(exitCode) },
+    );
+
+    expect(buildExits).toEqual([2]);
+  });
+
   it("runs with no output callbacks at all without throwing (ScanOutput is optional)", async () => {
     const sandbox = new FakeSandboxPort();
     const capture = new FakeCapturePort();
