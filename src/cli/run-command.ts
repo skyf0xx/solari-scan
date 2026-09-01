@@ -269,7 +269,13 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
 
     await writeReportJson(REPORT_JSON_PATH, renderReportJson(report));
 
-    return { exitCode: report.scan.execution.failed ? 0 : 0, report };
+    // Exit 0 regardless of report.scan.execution.failed: a non-zero
+    // install/build exit inside the scanned repo is an observed fact this
+    // scan reports on, not a failure of the scan itself — this tool's own
+    // "facts, not a verdict" framing means solari-scan's own exit code
+    // stays reserved for solari-scan failing to do its job (the ERROR_
+    // MAPPINGS cases above), never for what it observed.
+    return { exitCode: 0, report };
   } catch (err) {
     if (interrupted) {
       return { exitCode: INTERRUPT_EXIT_CODE };
