@@ -138,7 +138,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr,
       writeReportJson,
@@ -166,7 +166,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets" },
+      args: { repoUrl: "https://github.com/acme/widgets", withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -174,7 +174,41 @@ describe("runCommand", () => {
 
     expect(runScanMock).toHaveBeenCalledTimes(1);
     const [input] = runScanMock.mock.calls[0] ?? [];
-    expect(input).toEqual({ repoUrl: "https://github.com/acme/widgets", prNumber: undefined });
+    expect(input).toEqual({
+      repoUrl: "https://github.com/acme/widgets",
+      prNumber: undefined,
+      withFilesystemCheck: false,
+    });
+  });
+
+  it("passes withFilesystemCheck: false through to runScan when --with-fs was not passed", async () => {
+    runScanMock.mockResolvedValue(makeReport());
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", withFs: false },
+      stdout: vi.fn(),
+      stderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const [input] = runScanMock.mock.calls[0] ?? [];
+    expect(input).toMatchObject({ withFilesystemCheck: false });
+  });
+
+  it("passes withFilesystemCheck: true through to runScan when --with-fs was passed", async () => {
+    runScanMock.mockResolvedValue(makeReport());
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", withFs: true },
+      stdout: vi.fn(),
+      stderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const [input] = runScanMock.mock.calls[0] ?? [];
+    expect(input).toMatchObject({ withFilesystemCheck: true });
   });
 
   it("wires SandboxAdapter with the config's apiKey/baseUrl", async () => {
@@ -182,7 +216,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-abc", baseUrl: "https://custom.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -196,7 +230,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-abc", baseUrl: "https://custom.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -216,7 +250,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-abc", baseUrl: "https://custom.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 7 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 7, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -224,7 +258,7 @@ describe("runCommand", () => {
 
     expect(runScanMock).toHaveBeenCalledTimes(1);
     const [input, ports] = runScanMock.mock.calls[0] ?? [];
-    expect(input).toEqual({ repoUrl: "https://github.com/acme/widgets", prNumber: 7 });
+    expect(input).toEqual({ repoUrl: "https://github.com/acme/widgets", prNumber: 7, withFilesystemCheck: false });
     expect(ports).toHaveProperty("sandbox");
     expect(ports).toHaveProperty("capture");
   });
@@ -235,7 +269,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout: vi.fn(),
       stderr,
       writeReportJson: vi.fn(),
@@ -252,7 +286,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn(),
@@ -267,7 +301,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/missing", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/missing", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn(),
@@ -282,7 +316,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn(),
@@ -298,7 +332,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr,
       writeReportJson: vi.fn(),
@@ -328,7 +362,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -344,7 +378,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -361,6 +395,32 @@ describe("runCommand", () => {
     expect(lines.some((l) => l.includes("Sandbox destroyed"))).toBe(true);
     expect(lines.join("\n")).not.toContain("safe");
     expect(lines.join("\n")).not.toContain("unsafe");
+  });
+
+  it("never mentions baseline/post-run snapshots or filesystem hashing when the report's telemetry has no filesystem fields (--with-fs was not passed)", async () => {
+    const report = makeReport({
+      scan: {
+        ...makeReport().scan,
+        telemetry: { proxyPort: 8080, connectionsObserved: 2 },
+      },
+    });
+    runScanMock.mockResolvedValue(report);
+    const stdout = vi.fn();
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
+      stdout,
+      stderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const lines = stdout.mock.calls.map(([line]) => line as string);
+    expect(lines.some((l) => l.includes("Baseline snapshot"))).toBe(false);
+    expect(lines.some((l) => l.includes("Post-run snapshot"))).toBe(false);
+    expect(lines.some((l) => l.toLowerCase().includes("hash"))).toBe(false);
+    expect(lines.some((l) => l.includes("Proxy listening on port 8080"))).toBe(true);
+    expect(lines.some((l) => l.includes("observed 2 distinct connections"))).toBe(true);
   });
 
   it("streams install/build output live via onInstallOutput/onBuildOutput, printing a generic label before each step's first chunk", async () => {
@@ -382,7 +442,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr: vi.fn(),
       writeStdout,
@@ -409,7 +469,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr: vi.fn(),
       writeStdout: vi.fn(),
@@ -432,7 +492,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr: vi.fn(),
       writeStdout: vi.fn(),
@@ -454,7 +514,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr: vi.fn(),
       writeStdout: vi.fn(),
@@ -477,7 +537,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
       stdout,
       stderr: vi.fn(),
       writeStdout: vi.fn(),
@@ -515,7 +575,7 @@ describe("runCommand", () => {
 
       const runPromise = runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout,
@@ -558,7 +618,7 @@ describe("runCommand", () => {
 
       const runPromise = runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout,
@@ -599,7 +659,7 @@ describe("runCommand", () => {
 
       const runPromise = runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout,
@@ -643,7 +703,7 @@ describe("runCommand", () => {
 
       const runPromise = runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout,
@@ -686,7 +746,7 @@ describe("runCommand", () => {
 
       const runPromise = runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout,
@@ -719,7 +779,7 @@ describe("runCommand", () => {
 
       await runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout: vi.fn(),
@@ -737,7 +797,7 @@ describe("runCommand", () => {
 
       await runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout: vi.fn(),
@@ -763,7 +823,7 @@ describe("runCommand", () => {
 
       await runCommand({
         config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42, withFs: false },
         stdout: vi.fn(),
         stderr: vi.fn(),
         writeStdout: vi.fn(),
@@ -782,7 +842,7 @@ describe("runCommand", () => {
 
     await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),
@@ -817,7 +877,7 @@ describe("runCommand", () => {
 
     const result = await runCommand({
       config: { apiKey: "sk-test", baseUrl: "https://api.test" },
-      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1 },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 1, withFs: false },
       stdout: vi.fn(),
       stderr: vi.fn(),
       writeReportJson: vi.fn().mockResolvedValue(undefined),

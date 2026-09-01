@@ -356,7 +356,7 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
     };
 
     const report = await runScan(
-      { repoUrl: deps.args.repoUrl, prNumber: deps.args.prNumber },
+      { repoUrl: deps.args.repoUrl, prNumber: deps.args.prNumber, withFilesystemCheck: deps.args.withFs },
       { sandbox: sandboxAdapter, capture: captureAdapter },
       {
         onInstallOutput,
@@ -434,9 +434,18 @@ function narrateFromReport(report: Report, stdout: (line: string) => void): void
   const { scan } = report;
   stdout(renderProvisioningDoneLine());
   stdout(renderCloneDoneLine(scan.input.repoUrl, scan.input.prNumber));
-  stdout(renderBaselineSnapshotLine(scan.telemetry.filesHashedBaseline));
+  // Both lines are skipped entirely, not printed with an "unavailable"
+  // reason, when the filesystem check didn't run (no --with-fs) — the
+  // fields are absent from telemetry in that case (see
+  // `domain/types.ts`'s `ScanTelemetry` doc comment), and the report must
+  // read as if the filesystem check were never a feature at all.
+  if (scan.telemetry.filesHashedBaseline !== undefined) {
+    stdout(renderBaselineSnapshotLine(scan.telemetry.filesHashedBaseline));
+  }
   stdout(renderProxyStartLine(scan.telemetry.proxyPort));
-  stdout(renderPostRunSnapshotLine(scan.telemetry.filesHashedPostRun));
+  if (scan.telemetry.filesHashedPostRun !== undefined) {
+    stdout(renderPostRunSnapshotLine(scan.telemetry.filesHashedPostRun));
+  }
   stdout(renderProxyLogParseLine(scan.telemetry.connectionsObserved));
   stdout(renderTeardownLine());
 }

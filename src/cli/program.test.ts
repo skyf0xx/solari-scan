@@ -13,6 +13,7 @@ describe("createProgram", () => {
 
     expect(onRun).toHaveBeenCalledWith({
       repoUrl: "https://github.com/acme/widgets",
+      withFs: false,
     } satisfies ParsedArgs);
   });
 
@@ -25,6 +26,7 @@ describe("createProgram", () => {
     expect(onRun).toHaveBeenCalledWith({
       repoUrl: "https://github.com/acme/widgets",
       prNumber: 42,
+      withFs: false,
     } satisfies ParsedArgs);
   });
 
@@ -37,6 +39,7 @@ describe("createProgram", () => {
     expect(onRun).toHaveBeenCalledWith({
       repoUrl: "https://github.com/acme/widgets",
       prNumber: 7,
+      withFs: false,
     } satisfies ParsedArgs);
   });
 
@@ -48,6 +51,7 @@ describe("createProgram", () => {
 
     expect(onRun).toHaveBeenCalledWith({
       repoUrl: "https://github.com/acme/widgets",
+      withFs: false,
     } satisfies ParsedArgs);
   });
 
@@ -95,8 +99,39 @@ describe("createProgram", () => {
     expect(onRun).not.toHaveBeenCalled();
   });
 
-  it("registers no flags at all", () => {
+  it("registers exactly one flag: --with-fs", () => {
     const program = createProgram({ onRun: vi.fn() });
-    expect(program.options).toHaveLength(0);
+    expect(program.options).toHaveLength(1);
+    expect(program.options[0]?.long).toBe("--with-fs");
+  });
+
+  it("defaults withFs to false when --with-fs is not passed", async () => {
+    const onRun = vi.fn();
+    const program = createProgram({ onRun });
+
+    await program.parseAsync([...ARGV_PREFIX, "https://github.com/acme/widgets"]);
+
+    expect(onRun).toHaveBeenCalledWith(expect.objectContaining({ withFs: false }));
+  });
+
+  it("sets withFs to true when --with-fs is passed", async () => {
+    const onRun = vi.fn();
+    const program = createProgram({ onRun });
+
+    await program.parseAsync([...ARGV_PREFIX, "--with-fs", "https://github.com/acme/widgets"]);
+
+    expect(onRun).toHaveBeenCalledWith({
+      repoUrl: "https://github.com/acme/widgets",
+      withFs: true,
+    } satisfies ParsedArgs);
+  });
+
+  it("accepts --with-fs after the url positional too", async () => {
+    const onRun = vi.fn();
+    const program = createProgram({ onRun });
+
+    await program.parseAsync([...ARGV_PREFIX, "https://github.com/acme/widgets", "--with-fs"]);
+
+    expect(onRun).toHaveBeenCalledWith(expect.objectContaining({ withFs: true }));
   });
 });

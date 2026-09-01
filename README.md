@@ -5,29 +5,55 @@ and build, and reports whether it found anything suspicious — unexpected
 network destinations, unexpected filesystem writes outside the repo.
 
 ```
-solari-scan <url>
+solari-scan <url> [--with-fs]
 ```
 
 `<url>` is either a plain repo link (`https://github.com/owner/repo`,
 scanning the default branch) or a PR link
-(`https://github.com/owner/repo/pull/<n>`, scanning that PR). No other
-flags, no config.
+(`https://github.com/owner/repo/pull/<n>`, scanning that PR). No config.
+
+## Scan depth
+
+solari-scan runs at one of two depths, the same way a disk check or an
+antivirus scan offers a quick pass versus a thorough one:
+
+- **Default (fast)** — network check only. Watches the install/build's
+  outbound traffic through a forwarding proxy and classifies each
+  destination against a hardcoded host allowlist. No filesystem hashing,
+  so a scan finishes in roughly the time the install/build itself takes.
+- **`--with-fs` (deep)** — adds the filesystem check on top: hashes the
+  sandbox's file tree before and after install/build and reports any
+  file created, modified, or deleted outside the repo directory. This is
+  more thorough but slower — recursively hashing a sandbox's file tree
+  means many round trips to the sandbox, which can add real time on a
+  large install (e.g. a big `node_modules`). Use it when you specifically
+  want filesystem-write visibility and can afford the extra time; skip it
+  for a quick pass.
+
+This is the first of what may become multiple scan-depth levels —
+more mechanisms can slot in behind their own opt-in flag the same way,
+without changing the default fast path.
 
 ## What it does
 
 1. Provisions a fresh Solari sandbox.
 2. Clones the repo, checks out the PR if the URL named one.
-3. Hashes the file tree as a baseline.
+3. With `--with-fs`: hashes the file tree as a baseline.
 4. Starts a forwarding proxy, exports `HTTP_PROXY`/`HTTPS_PROXY` to log
    proxy-respecting traffic.
 5. Detects the package manager, runs install.
 6. Runs build, only if install succeeded. Never runs tests.
-7. Hashes the file tree again, diffs against the baseline.
+7. With `--with-fs`: hashes the file tree again, diffs against the
+   baseline.
 8. Classifies each destination against a hardcoded host allowlist
    (registries, git hosts, common CDNs).
 9. Prints a report, writes `solari-scan-report.json`.
 10. Destroys the sandbox on every exit path — failure, crash, or
     interrupt.
+
+Without `--with-fs`, steps 3 and 7 are skipped entirely and nothing in
+the report mentions them — the output looks exactly as if the filesystem
+check didn't exist.
 
 Install/build output streams live. A failed install or build doesn't
 abort the scan — capture and reporting still complete.
