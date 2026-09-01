@@ -21,8 +21,16 @@
     "security",
     "sandbox"
   ],
-  "author": "",
+  "author": "Will",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skyf0xx/solari-scan.git"
+  },
+  "homepage": "https://github.com/skyf0xx/solari-scan#readme",
+  "bugs": {
+    "url": "https://github.com/skyf0xx/solari-scan/issues"
+  },
   "devDependencies": {
     "@types/node": "^26.4.0",
     "tsup": "^8.5.1",

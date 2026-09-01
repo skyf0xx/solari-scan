@@ -89,3 +89,7 @@ Anything not listed is reported as a network finding:
 - **CI integration**: run automatically on every PR.
 - **More languages**: currently JS/TS only.
 - **Deeper scans/ more granular scans**: e.g. detect POST vs GET, malicious behavior, etc.
+
+---
+
+🦔 Built with [Hedgehog](https://github.com/skyf0xx/hedgehog).
