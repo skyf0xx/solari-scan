@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CloneError,
   PackageManagerUndetectedError,
@@ -419,6 +419,244 @@ describe("runCommand", () => {
 
     const lines = stdout.mock.calls.map(([line]) => line as string);
     expect(lines.filter((l) => l === "Running install...")).toHaveLength(1);
+  });
+
+  it("prints Install exited N. the instant onInstallExit fires, before runScan resolves", async () => {
+    const stdout = vi.fn();
+    let stdoutAtExitTime: string[] = [];
+    runScanMock.mockImplementation(async (_input, _ports, output) => {
+      output.onInstallExit(0);
+      stdoutAtExitTime = [...stdout.mock.calls.map((call) => call[0] as string)];
+      return makeReport();
+    });
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      stdout,
+      stderr: vi.fn(),
+      writeStdout: vi.fn(),
+      writeStderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(stdoutAtExitTime).toContain("Install exited 0.");
+  });
+
+  it("prints Build exited N. via onBuildExit, and never calls it when build did not run", async () => {
+    runScanMock.mockImplementation(async (_input, _ports, output) => {
+      output.onInstallExit(0);
+      output.onBuildExit(1);
+      return makeReport();
+    });
+
+    const stdout = vi.fn();
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      stdout,
+      stderr: vi.fn(),
+      writeStdout: vi.fn(),
+      writeStderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const lines = stdout.mock.calls.map(([line]) => line as string);
+    expect(lines).toContain("Install exited 0.");
+    expect(lines).toContain("Build exited 1.");
+  });
+
+  it("does not print a Build exited line when onBuildExit never fires (install failed)", async () => {
+    runScanMock.mockImplementation(async (_input, _ports, output) => {
+      output.onInstallExit(1);
+      return makeReport();
+    });
+
+    const stdout = vi.fn();
+
+    await runCommand({
+      config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+      args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+      stdout,
+      stderr: vi.fn(),
+      writeStdout: vi.fn(),
+      writeStderr: vi.fn(),
+      writeReportJson: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const lines = stdout.mock.calls.map((call) => call[0] as string);
+    expect(lines).toContain("Install exited 1.");
+    expect(lines.some((l) => l.startsWith("Build exited"))).toBe(false);
+  });
+
+  describe("heartbeat wiring", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("ticks a provisioning heartbeat while runScan is still pending, and stops once onInstallOutput's first chunk arrives", async () => {
+      const writeStdout = vi.fn();
+      let resolveRunScan!: (report: Report) => void;
+      let capturedOutput: { onInstallOutput: (stream: string, data: string) => void } | undefined;
+
+      runScanMock.mockImplementation(
+        (_input: unknown, _ports: unknown, output: { onInstallOutput: (stream: string, data: string) => void }) => {
+          capturedOutput = output;
+          return new Promise<Report>((resolve) => {
+            resolveRunScan = resolve;
+          });
+        },
+      );
+
+      const runPromise = runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout,
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // Let a couple of provisioning heartbeat ticks fire before install
+      // output starts arriving — this is the "still working" stretch with
+      // no other signal available (see run-command.ts's header).
+      await vi.advanceTimersByTimeAsync(4000);
+      const ticksBeforeInstall = writeStdout.mock.calls.length;
+      expect(ticksBeforeInstall).toBeGreaterThanOrEqual(2);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Provisioning sandbox"))).toBe(true);
+
+      capturedOutput?.onInstallOutput("stdout", "installing...\n");
+      writeStdout.mockClear();
+
+      // No more provisioning heartbeat ticks once install output has begun.
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Provisioning sandbox"))).toBe(false);
+
+      resolveRunScan(makeReport());
+      await runPromise;
+    });
+
+    it("ticks an install heartbeat during the silent gap before the first install output chunk, then stops on that chunk", async () => {
+      const writeStdout = vi.fn();
+      let resolveRunScan!: (report: Report) => void;
+      let capturedOutput: { onInstallOutput: (stream: string, data: string) => void } | undefined;
+
+      runScanMock.mockImplementation(
+        (_input: unknown, _ports: unknown, output: { onInstallOutput: (stream: string, data: string) => void }) => {
+          capturedOutput = output;
+          return new Promise<Report>((resolve) => {
+            resolveRunScan = resolve;
+          });
+        },
+      );
+
+      const runPromise = runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout,
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn().mockResolvedValue(undefined),
+      });
+
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Running install"))).toBe(true);
+
+      capturedOutput?.onInstallOutput("stdout", "chunk\n");
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Running install..."))).toBe(false);
+
+      resolveRunScan(makeReport());
+      await runPromise;
+    });
+
+    it("starts a build heartbeat on a successful install exit and stops it once build output arrives", async () => {
+      const writeStdout = vi.fn();
+      let resolveRunScan!: (report: Report) => void;
+      let capturedOutput:
+        | {
+            onInstallOutput: (stream: string, data: string) => void;
+            onInstallExit: (exitCode: number) => void;
+            onBuildOutput: (stream: string, data: string) => void;
+          }
+        | undefined;
+
+      runScanMock.mockImplementation((_input: unknown, _ports: unknown, output: typeof capturedOutput) => {
+        capturedOutput = output;
+        return new Promise<Report>((resolve) => {
+          resolveRunScan = resolve;
+        });
+      });
+
+      const runPromise = runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout,
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn().mockResolvedValue(undefined),
+      });
+
+      capturedOutput?.onInstallOutput("stdout", "installing\n");
+      capturedOutput?.onInstallExit(0);
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Running build"))).toBe(true);
+
+      capturedOutput?.onBuildOutput("stdout", "chunk\n");
+      writeStdout.mockClear();
+
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(writeStdout.mock.calls.some(([data]) => (data as string).includes("Running build..."))).toBe(false);
+
+      resolveRunScan(makeReport());
+      await runPromise;
+    });
+
+    it("leaves no dangling heartbeat timers after runCommand resolves successfully", async () => {
+      runScanMock.mockResolvedValue(makeReport());
+
+      await runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout: vi.fn(),
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn().mockResolvedValue(undefined),
+      });
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("leaves no dangling heartbeat timers when runScan rejects mid-scan", async () => {
+      runScanMock.mockImplementation(async (_input, _ports) => {
+        throw new SandboxProvisioningError("boom");
+      });
+
+      await runCommand({
+        config: { apiKey: "sk-test", baseUrl: "https://api.test" },
+        args: { repoUrl: "https://github.com/acme/widgets", prNumber: 42 },
+        stdout: vi.fn(),
+        stderr: vi.fn(),
+        writeStdout: vi.fn(),
+        writeStderr: vi.fn(),
+        writeReportJson: vi.fn(),
+      });
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it("registers and cleans up SIGINT/SIGTERM handlers around the scan", async () => {

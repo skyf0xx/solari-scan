@@ -63,7 +63,52 @@
  * see `domain/scan.ts`'s `ScanOutput` doc comment) built exactly for this.
  * `command` passes real `stdout`/`stderr`-writing callbacks there, so
  * install/build output reaches the terminal as it's produced, genuinely
- * live, not narrated after the fact.
+ * live, not narrated after the fact. `ScanOutput` also carries
+ * `onInstallExit`/`onBuildExit`, fired the instant each command's exit code
+ * resolves — wired below to print immediately rather than waiting for the
+ * final report.
+ *
+ * --- Heartbeat coverage, and where it can't reach (SOLARI-SCAN-LIVE-PROGRESS-COMMAND) ---
+ *
+ * There is no SDK-side progress signal for sandbox provisioning, or for the
+ * capture-adapter's filesystem-hashing/proxy-log-parsing steps (confirmed by
+ * the `sandbox-adapter`/`capture-adapter` layers) — any "still working"
+ * output during those stretches has to be a plain client-side timer, keyed
+ * off wall-clock time only (`./heartbeat.ts`).
+ *
+ * Provisioning: `runScan` calls `ports.sandbox.provision()` internally,
+ * before its own try/finally, so `command` never gets a "provisioning
+ * specifically finished" signal distinct from "the whole scan resolved or
+ * rejected" — there is no earlier callback to hook. The best available
+ * proxy is `onInstallOutput`'s *first* call, which can only fire after
+ * provisioning, clone, and package-manager detection have all already
+ * succeeded — so provisioning is *definitely* done by then. The heartbeat
+ * below runs from right after `renderProvisioningStartLine()` until the
+ * first of {`onInstallOutput` first fires, `runScan` settles}, which covers
+ * provisioning plus clone plus package-manager detection under one label.
+ * That's a deliberately loose boundary, not a precise "provisioning done"
+ * signal — accepted per the packet's own guidance ("no silent stretch
+ * longer than ~2-3 heartbeat ticks", not architectural precision), and
+ * because a real per-step signal would require a `domain`-layer change this
+ * task's scope doesn't include.
+ *
+ * Post-run snapshot hashing and proxy-log parsing: **no heartbeat covers
+ * these, and this is a genuine, reported gap, not an oversight.** Both
+ * steps run entirely *inside* `runScan`, after the install/build steps
+ * `command` does get live output for, and their own narration
+ * (`renderPostRunSnapshotLine`/`renderProxyLogParseLine`) only happens in
+ * `narrateFromReport`'s post-hoc burst below — by the time `command` regains
+ * control, both steps have already finished. Unlike provisioning, there is
+ * no proxy signal available either: nothing else fires between the last
+ * `onBuildOutput`/`onBuildExit` and `runScan`'s final resolution that could
+ * mark "post-run snapshot started" or "proxy log parse started". Covering
+ * this stretch faithfully needs a `domain`-layer callback analogous to
+ * `onInstallExit`/`onBuildExit` (e.g. `onPostRunSnapshotStart`,
+ * `onProxyLogParseStart`) that does not exist today and is out of this
+ * layer's ALLOWED SCOPE (`src/cli/**`, not `src/domain/**`) to add. Rather
+ * than fabricate a heartbeat keyed to nothing real, this is left silent for
+ * that one stretch and flagged here for a follow-up Correction Protocol /
+ * domain-layer task.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -81,7 +126,9 @@ import {
 import type { Report } from "../domain/types.js";
 import {
   renderBaselineSnapshotLine,
+  renderBuildExitLine,
   renderCloneDoneLine,
+  renderInstallExitLine,
   renderPostRunSnapshotLine,
   renderProvisioningDoneLine,
   renderProvisioningStartLine,
@@ -93,6 +140,7 @@ import {
 } from "../report/index.js";
 import type { SolariConfig } from "./config.js";
 import { createSandboxGuestAccess } from "./guest-access.js";
+import { startHeartbeat } from "./heartbeat.js";
 import type { ParsedArgs } from "./program.js";
 
 export const REPORT_JSON_PATH = "./solari-scan-report.json";
@@ -222,8 +270,27 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
   process.once("SIGINT", onSignal);
   process.once("SIGTERM", onSignal);
 
+  // Every heartbeat started anywhere below is stopped unconditionally in
+  // `finally`, in addition to being stopped at its own natural end point —
+  // `Heartbeat.stop()` is idempotent, so this is a safety net against a
+  // dangling `setInterval` on a path (e.g. `runScan` rejecting) that skips
+  // that heartbeat's own stop call.
+  const activeHeartbeats: ReturnType<typeof startHeartbeat>[] = [];
+  const trackedHeartbeat = (label: string): ReturnType<typeof startHeartbeat> => {
+    const heartbeat = startHeartbeat(label, writeStdout);
+    activeHeartbeats.push(heartbeat);
+    return heartbeat;
+  };
+
   try {
     stdout(renderProvisioningStartLine());
+
+    // Covers provisioning + clone + package-manager detection under one
+    // label, stopped at the first of {onInstallOutput's first call, runScan
+    // settling} — see this file's header ("Heartbeat coverage") for why
+    // there's no more precise "provisioning specifically done" signal
+    // available to this layer.
+    const provisioningHeartbeat = trackedHeartbeat("Provisioning sandbox");
 
     // The full label ("Running install: npm install") names the detected
     // command, which `runScan` only knows internally — it isn't available
@@ -237,9 +304,18 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
     let installStarted = false;
     let buildStarted = false;
 
+    // Covers the silent gap between "Running install/build..." printing and
+    // that step's first real output chunk arriving — cleared the instant
+    // the first chunk shows up (below), not just on the command's eventual
+    // completion, per this task's packet.
+    const installHeartbeat = trackedHeartbeat("Running install");
+    let buildHeartbeat: ReturnType<typeof startHeartbeat> | undefined;
+
     const onInstallOutput = (stream: "stdout" | "stderr", data: string): void => {
       if (!installStarted) {
         installStarted = true;
+        provisioningHeartbeat.stop();
+        installHeartbeat.stop();
         stdout("Running install...");
       }
       (stream === "stdout" ? writeStdout : writeStderr)(data);
@@ -247,15 +323,27 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
     const onBuildOutput = (stream: "stdout" | "stderr", data: string): void => {
       if (!buildStarted) {
         buildStarted = true;
+        buildHeartbeat?.stop();
         stdout("Running build...");
       }
       (stream === "stdout" ? writeStdout : writeStderr)(data);
+    };
+    const onInstallExit = (exitCode: number): void => {
+      installHeartbeat.stop();
+      stdout(renderInstallExitLine(exitCode));
+      if (exitCode === 0) {
+        buildHeartbeat = trackedHeartbeat("Running build");
+      }
+    };
+    const onBuildExit = (exitCode: number): void => {
+      buildHeartbeat?.stop();
+      stdout(renderBuildExitLine(exitCode));
     };
 
     const report = await runScan(
       { repoUrl: deps.args.repoUrl, prNumber: deps.args.prNumber },
       { sandbox: sandboxAdapter, capture: captureAdapter },
-      { onInstallOutput, onBuildOutput },
+      { onInstallOutput, onBuildOutput, onInstallExit, onBuildExit },
     );
 
     if (interrupted) {
@@ -288,6 +376,14 @@ export async function runCommand(deps: RunCommandDeps): Promise<RunResult> {
     stderr(`solari-scan failed unexpectedly: ${message}`);
     return { exitCode: UNEXPECTED_ERROR_EXIT_CODE };
   } finally {
+    // Stops every heartbeat started above, on every exit path (success,
+    // known ScanError, unexpected error, interrupt) — most are already
+    // stopped by their own natural end point by the time this runs, and
+    // `Heartbeat.stop()` is idempotent, so this is purely the dangling-timer
+    // safety net described where `activeHeartbeats` is declared.
+    for (const heartbeat of activeHeartbeats) {
+      heartbeat.stop();
+    }
     process.removeListener("SIGINT", onSignal);
     process.removeListener("SIGTERM", onSignal);
     // Idempotent: runScan's own finally already destroyed the sandbox on
