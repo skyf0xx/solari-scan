@@ -60,7 +60,6 @@
 
 import { createHash } from "node:crypto";
 import type { FilesystemChange, FilesystemSnapshot, SnapshotEntry } from "../../domain/ports.js";
-import { CaptureAdapterError } from "./errors.js";
 import { PROXY_LOG_PATH, PROXY_SCRIPT_PATH } from "./proxy-capture.js";
 import type { SandboxGuestAccess } from "./sandbox-files.js";
 
@@ -195,9 +194,13 @@ export class FilesystemCaptureAdapter {
     try {
       listing = await this.files.list(dir);
     } catch (err) {
-      throw new CaptureAdapterError(`Failed to list "${dir}" while snapshotting the filesystem.`, {
-        cause: err,
-      });
+      // Same rationale as `hashFile`'s unreadable-entry handling below: a
+      // permissions-denied or otherwise unlistable directory anywhere in a
+      // large tree (confirmed live inside a 628-package node_modules) would
+      // abort the entire scan with no report at all if this threw. Record
+      // the directory itself as unreadable and keep walking its siblings.
+      out.push({ path: dir, hash: unreadableSentinelHash(errorMessage(err)) });
+      return;
     }
 
     for (const entry of listing) {

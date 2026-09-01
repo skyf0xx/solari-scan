@@ -8,7 +8,6 @@ import type {
   SandboxGuestAccess,
   SandboxRunResult,
 } from "./sandbox-files.js";
-import { CaptureAdapterError } from "./errors.js";
 
 interface FakeFile {
   content: Uint8Array;
@@ -159,28 +158,29 @@ describe("FilesystemCaptureAdapter.snapshotFilesystem", () => {
     expect(baselineSnapshot.entries[0]!.hash).toBe(postRunSnapshot.entries[0]!.hash);
   });
 
-  it("wraps a list() failure in CaptureAdapterError", async () => {
-    const files: SandboxGuestAccess = {
-      list: async () => {
+  it("records a list() failure with a sentinel hash instead of aborting the scan", async () => {
+    // Confirmed live: a directory anywhere in a large tree (e.g. a
+    // 628-package node_modules) can fail to list — a permissions issue or
+    // a race with the install/build still writing to it. Aborting the
+    // whole scan over one unlistable directory would fail every run
+    // against any repo whose install produces one.
+    const files = new FakeSandboxFiles();
+    files.setFile("repo/a.txt", "hello");
+    const originalList = files.list.bind(files);
+    files.list = async (dir: string) => {
+      if (dir === "repo") {
         throw new Error("permission denied");
-      },
-      stat: async () => {
-        throw new Error("unreachable");
-      },
-      read: async () => {
-        throw new Error("unreachable");
-      },
-      write: async () => {
-        throw new Error("unreachable");
-      },
-      start: async () => {
-        throw new Error("unreachable");
-      },
-      run: async () => ({ exitCode: 0, stdout: ".\n" }),
+      }
+      return originalList(dir);
     };
 
     const adapter = new FilesystemCaptureAdapter(files);
-    await expect(adapter.snapshotFilesystem()).rejects.toBeInstanceOf(CaptureAdapterError);
+    const snapshot = await adapter.snapshotFilesystem();
+
+    const entry = snapshot.entries.find((e) => e.path === "repo");
+    expect(entry).toBeDefined();
+    expect(entry!.hash).toContain("unreadable:");
+    expect(entry!.hash).toContain("permission denied");
   });
 
   it("records an unreadable entry with a sentinel hash instead of aborting the scan", async () => {
