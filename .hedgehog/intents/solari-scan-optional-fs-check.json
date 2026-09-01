@@ -1,0 +1,56 @@
+{
+  "id": "solari-scan-optional-fs-check",
+  "goal": "Make the filesystem hash/diff check opt-in behind a new `--with-fs` CLI flag instead of always running. Default behavior (no flag) runs only the network-destination check: no baseline snapshot, no post-run snapshot, no diffFilesystem call, and the report says nothing at all about the filesystem check having been skipped — it looks exactly as if filesystem checking were never a feature. Passing `--with-fs` reproduces today's behavior exactly: both checks run, unchanged.",
+  "outcome": "A user running `solari-scan <url>` with no flag gets a fast scan: only the proxy/network check runs, and no line anywhere in the live narration, the terminal report, or solari-scan-report.json mentions filesystem hashing, a skip, or a null/absent telemetry field by name. A user running `solari-scan <url> --with-fs` gets identical behavior to the current, already-shipped scan: baseline snapshot, post-run snapshot, diff, filesystem findings, filesystem telemetry lines, all present exactly as today. README.md documents `--with-fs` under a 'deep scan' framing, presented explicitly as the first of what could become multiple future scan-depth levels, not merely as a flag description.",
+  "priority": 1,
+  "requirements": [
+    {
+      "id": "SOLARI-SCAN-FS-OPT-RULE-1",
+      "kind": "rule",
+      "statement": "runScan (domain layer) only calls ports.capture.snapshotFilesystem() (baseline and post-run) and ports.capture.diffFilesystem() when the caller has indicated the filesystem check is enabled. This is a new field on ScanInput (e.g. a boolean), not a new port method or a change to CapturePort's interface — sandbox-adapter and capture-adapter's existing bindings are untouched."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-RULE-2",
+      "kind": "rule",
+      "statement": "When the filesystem check does not run, no filesystem Finding is ever pushed, and ScanTelemetry's filesystem-related fields (filesHashedBaseline, filesHashedPostRun) are represented in a way every downstream consumer (report text, report JSON, live narration) can distinguish from 'the check ran and found 0 files' — never a fabricated 0 or Unavailable-with-a-fake-reason standing in for 'this check did not run'."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-RULE-3",
+      "kind": "rule",
+      "statement": "When the filesystem check does not run, absolutely nothing in the live narration, the terminal report text, or solari-scan-report.json mentions the filesystem check, a baseline/post-run snapshot, hashing, or that anything was skipped. The output must read identically to a hypothetical build of solari-scan that never had a filesystem-check feature at all — not a report that mentions and then dismisses it."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-RULE-4",
+      "kind": "rule",
+      "statement": "When --with-fs is passed, every existing behavior (baseline snapshot, post-run snapshot, diff, filesystem findings, filesystem telemetry narration lines, filesystem lines in report text/JSON) is reproduced exactly as it exists today, with no change to wording, ordering, or content."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-RULE-5",
+      "kind": "rule",
+      "statement": "--with-fs is parsed as a Commander flag in src/cli/program.ts alongside the existing single positional <url> argument, and threaded through run-command.ts into ScanInput. No other new flag is introduced by this intent."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-ACCEPTANCE-1",
+      "kind": "acceptance",
+      "statement": "Running `solari-scan <url>` with no --with-fs flag produces a report (terminal text and JSON) and live narration containing zero mentions of filesystem hashing, snapshots, or the fs check being skipped, and only network-check findings/telemetry appear."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-ACCEPTANCE-2",
+      "kind": "acceptance",
+      "statement": "Running `solari-scan <url> --with-fs` produces output identical in shape and content to today's pre-existing behavior: baseline snapshot line, post-run snapshot line, filesystem findings (if any) itemized, filesystem telemetry present in the JSON report."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-ACCEPTANCE-3",
+      "kind": "acceptance",
+      "statement": "A repo whose install/build step writes files outside the repo directory is reported as a filesystem finding when --with-fs is passed, and produces no filesystem finding at all (network findings unaffected) when it is not."
+    },
+    {
+      "id": "SOLARI-SCAN-FS-OPT-ACCEPTANCE-4",
+      "kind": "acceptance",
+      "statement": "README.md documents --with-fs under a 'deep scan' concept, explicitly framed as the first of potentially multiple future scan-depth levels (analogous to antivirus/disk-check depth levels), not merely as a one-line flag description."
+    }
+  ],
+  "depends_on": [
+    "solari-scan-live-progress"
+  ]
+}
