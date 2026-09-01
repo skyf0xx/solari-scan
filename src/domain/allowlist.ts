@@ -11,8 +11,6 @@ export const HOST_ALLOWLIST: readonly string[] = [
   // package registries
   "registry.npmjs.org",
   "registry.yarnpkg.com",
-  "pypi.org",
-  "files.pythonhosted.org",
   // git hosts
   "github.com",
   "raw.githubusercontent.com",
