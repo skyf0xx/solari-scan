@@ -31,7 +31,8 @@ describe("renderReportText", () => {
     const text = renderReportText(report);
     const lines = text.split("\n");
 
-    expect(lines).toEqual([CLEAN_RUN_LINE]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(CLEAN_RUN_LINE);
   });
 
   it("itemizes each finding with its kind, detail, and producedBy step", () => {
@@ -80,5 +81,32 @@ describe("renderReportText", () => {
     const text = renderReportText(report);
 
     expect(text).not.toContain(SUSPICIOUS_LINE);
+  });
+
+  it("prefixes the clean-run verdict with a checkmark icon", () => {
+    const report = buildReport(makeScan(), []);
+
+    const text = renderReportText(report);
+
+    expect(text).toContain(`✅ ${CLEAN_RUN_LINE}`);
+  });
+
+  it("prefixes the suspicious-activity verdict with a warning icon", () => {
+    const findings: Finding[] = [{ kind: "network", detail: "evil.example", producedBy: "classify" }];
+    const report = buildReport(makeScan(), findings);
+
+    const text = renderReportText(report);
+
+    expect(text).toContain(`⚠️ ${SUSPICIOUS_LINE}`);
+  });
+
+  it("does not emit ANSI color codes when stdout is not a TTY", () => {
+    const findings: Finding[] = [{ kind: "network", detail: "evil.example", producedBy: "classify" }];
+    const report = buildReport(makeScan(), findings);
+
+    const text = renderReportText(report);
+
+    // eslint-disable-next-line no-control-regex
+    expect(text).not.toMatch(/\x1b\[/);
   });
 });
